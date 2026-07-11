@@ -16,3 +16,7 @@ target/
 # Env
 .env
 .env.local
+
+# Keystore (개인키 포함)
+*-keystore.json
+src/main/resources/keystore/

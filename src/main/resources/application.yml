@@ -1,0 +1,56 @@
+spring:
+  application:
+    name: jinbon-backend
+
+  config:
+    import: optional:file:.env[.properties]
+
+  # PostgreSQL
+  datasource:
+    url: jdbc:postgresql://localhost:5432/jinbon
+    username: jinbon
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+    show-sql: true
+
+  # Redis (캐시)
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+server:
+  port: 8080
+
+# OmniOne CX (모바일 신분증 - 필수과제)
+omnione:
+  cx:
+    server-url: ${OMNIONE_CX_URL:}  # API: 18543, 프론트 인증창: 17543
+    config-path: /esign/config/config.mid.json
+
+# OmniOne Chain (선택과제 2 - BESU)
+blockchain:
+  rpc-url: ${BLOCKCHAIN_RPC_URL:}
+  contract-address: ${CONTRACT_ADDRESS:}
+  wallet-address: ${WALLET_ADDRESS:0xd85b69765fdc9eeb70123b86d56e85d555ff7090}
+  keystore-path: ${KEYSTORE_PATH:classpath:keystore/omnione-chain-keystore.json}
+  keystore-password: ${KEYSTORE_PASSWORD:}
+
+# JWT
+jwt:
+  secret: ${JWT_SECRET:}
+  expiration: 3600000  # 1 hour
+
+# Logging
+logging:
+  level:
+    com.jinbon: DEBUG
+    org.hibernate.SQL: DEBUG
