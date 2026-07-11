@@ -1,6 +1,7 @@
 package com.jinbon.domain.auth.controller;
 
 import com.jinbon.domain.auth.dto.AuthResponse;
+import com.jinbon.domain.auth.dto.RefreshRequest;
 import com.jinbon.domain.auth.dto.VerifyRequest;
 import com.jinbon.domain.auth.service.AuthService;
 import com.jinbon.global.common.CommonResponse;
@@ -36,5 +37,18 @@ public class AuthController implements AuthApi {
     @Override
     public ResponseEntity<CommonResponse<AuthResponse>> verifyApp(@RequestBody VerifyRequest request) {
         return ResponseEntity.ok(CommonResponse.success(authService.verifyAppAndLogin(request)));
+    }
+
+    @PostMapping("/refresh")
+    @Override
+    public ResponseEntity<CommonResponse<AuthResponse>> refresh(@RequestBody RefreshRequest request) {
+        return ResponseEntity.ok(CommonResponse.success(authService.refresh(request.refreshToken())));
+    }
+
+    @PostMapping("/logout")
+    @Override
+    public ResponseEntity<CommonResponse<Void>> logout(@RequestBody RefreshRequest request) {
+        authService.logout(request.refreshToken());
+        return ResponseEntity.ok(CommonResponse.success(null));
     }
 }

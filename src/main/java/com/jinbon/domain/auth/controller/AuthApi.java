@@ -1,6 +1,7 @@
 package com.jinbon.domain.auth.controller;
 
 import com.jinbon.domain.auth.dto.AuthResponse;
+import com.jinbon.domain.auth.dto.RefreshRequest;
 import com.jinbon.domain.auth.dto.VerifyRequest;
 import com.jinbon.global.common.CommonResponse;
 import com.jinbon.infra.omnione.dto.OacxAppResponse;
@@ -22,8 +23,13 @@ import org.springframework.http.ResponseEntity;
         1. POST /api/auth/token         → token, txId 획득
         2. POST /api/auth/app/request   → 딥링크 URL + cxId 획득
         3. 딥링크로 모바일 운전면허증 앱 호출
-        4. POST /api/auth/app/verify    → JWT accessToken 획득
+        4. POST /api/auth/app/verify    → JWT accessToken + refreshToken 획득
         ```
+
+        ## 토큰 관리
+        - Access Token: 30분 유효, `Authorization: Bearer {token}` 헤더에 포함
+        - Refresh Token: 7일 유효, 만료 시 `POST /api/auth/refresh`로 갱신
+        - 로그아웃: `POST /api/auth/logout`
         """)
 public interface AuthApi {
 
@@ -74,9 +80,10 @@ public interface AuthApi {
                     1. OmniOne CX에서 신분증 검증
                     2. 검증된 신원정보(CI, 이름, 생년월일) 추출
                     3. CI 기반 자동 회원가입 또는 기존 회원 조회
-                    4. JWT accessToken 발급
+                    4. JWT accessToken + refreshToken 발급
 
                     **응답의 `accessToken`을 이후 API 호출 시 `Authorization: Bearer {token}` 헤더에 포함하세요.**
+                    **`refreshToken`은 accessToken 만료 시 갱신용으로 안전하게 보관하세요.**
                     """
     )
     @ApiResponses({
@@ -99,4 +106,33 @@ public interface AuthApi {
             )
     )
     ResponseEntity<CommonResponse<AuthResponse>> verifyApp(VerifyRequest request);
+
+    @Operation(
+            summary = "토큰 갱신",
+            description = """
+                    Access Token이 만료되었을 때 Refresh Token으로 새 토큰 쌍을 발급받습니다.
+
+                    **Refresh Token Rotation 적용:**
+                    - 갱신 시 새로운 accessToken + refreshToken이 발급됩니다.
+                    - 기존 refreshToken은 즉시 무효화됩니다.
+                    - 새로 발급된 refreshToken을 저장하세요.
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "토큰 갱신 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "유효하지 않은 리프레시 토큰")
+    })
+    ResponseEntity<CommonResponse<AuthResponse>> refresh(RefreshRequest request);
+
+    @Operation(
+            summary = "로그아웃",
+            description = """
+                    Refresh Token을 무효화하여 로그아웃합니다.
+                    클라이언트에서도 저장된 토큰을 삭제해주세요.
+                    """
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "로그아웃 성공")
+    })
+    ResponseEntity<CommonResponse<Void>> logout(RefreshRequest request);
 }

@@ -24,8 +24,8 @@ spring:
   # Redis (캐시)
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
+      host: localhost
+      port: 6380
 
 server:
   port: 8080
@@ -47,7 +47,8 @@ blockchain:
 # JWT
 jwt:
   secret: ${JWT_SECRET:}
-  expiration: 3600000  # 1 hour
+  access-expiration: 1800000   # 30분
+  refresh-expiration: 604800000  # 7일
 
 # Logging
 logging:
