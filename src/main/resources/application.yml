@@ -40,9 +40,16 @@ omnione:
 blockchain:
   rpc-url: ${BLOCKCHAIN_RPC_URL:}
   contract-address: ${CONTRACT_ADDRESS:}
-  wallet-address: ${WALLET_ADDRESS:0xd85b69765fdc9eeb70123b86d56e85d555ff7090}
-  keystore-path: ${KEYSTORE_PATH:classpath:keystore/omnione-chain-keystore.json}
+  wallet-address: ${WALLET_ADDRESS:}
+  keystore-path: classpath:keystore/omnione-chain-keystore.json
   keystore-password: ${KEYSTORE_PASSWORD:}
+  api-token: ${BLOCKCHAIN_API_TOKEN:}
+
+# Open DID (선택과제 1)
+opendid:
+  issuer-server-url: http://localhost:8091
+  vc-plan-id: vcplan-jinbon-01
+  issuer-did: did:omn:issuer
 
 # JWT
 jwt:

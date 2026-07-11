@@ -22,38 +22,45 @@ public class Video {
     private String title;
 
     @Column(nullable = false)
-    private String issuerDid;  // 등록한 공인의 DID
+    private String issuerDid;
 
     @Column(nullable = false, columnDefinition = "TEXT")
-    private String coarseHash;  // 거친해시
+    private String perceptualHash;
 
     @Column(nullable = false, columnDefinition = "TEXT")
-    private String fineHash;  // 정교한해시
+    private String fineHash;
 
     @Column(nullable = false, columnDefinition = "TEXT")
-    private String merkleRoot;  // 머클 루트
+    private String merkleRoot;
 
     @Column(columnDefinition = "TEXT")
-    private String merklePath;  // 머클 패스 (JSON)
+    private String merklePath;
 
-    private String blockNumber;  // 블록체인 기록 블록 번호
+    private String blockNumber;
 
-    private String txHash;  // 블록체인 트랜잭션 해시
+    private String txHash;
 
     @Column(nullable = false)
-    private String signature;  // 전자서명
+    private String signature;
 
     private Integer version;
 
+    private String vcId;
+
+    @Column(nullable = false)
+    private boolean active = true;
+
     private LocalDateTime registeredAt;
 
+    private LocalDateTime deactivatedAt;
+
     @Builder
-    public Video(String title, String issuerDid, String coarseHash, String fineHash,
-                 String merkleRoot, String merklePath, String blockNumber, String txHash,
-                 String signature, Integer version) {
+    private Video(String title, String issuerDid, String perceptualHash, String fineHash,
+                  String merkleRoot, String merklePath, String blockNumber, String txHash,
+                  String signature, Integer version, String vcId) {
         this.title = title;
         this.issuerDid = issuerDid;
-        this.coarseHash = coarseHash;
+        this.perceptualHash = perceptualHash;
         this.fineHash = fineHash;
         this.merkleRoot = merkleRoot;
         this.merklePath = merklePath;
@@ -61,6 +68,13 @@ public class Video {
         this.txHash = txHash;
         this.signature = signature;
         this.version = version;
+        this.vcId = vcId;
+        this.active = true;
         this.registeredAt = LocalDateTime.now();
+    }
+
+    public void deactivate() {
+        this.active = false;
+        this.deactivatedAt = LocalDateTime.now();
     }
 }

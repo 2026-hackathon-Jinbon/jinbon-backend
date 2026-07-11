@@ -20,3 +20,7 @@ target/
 # Keystore (개인키 포함)
 *-keystore.json
 src/main/resources/keystore/
+
+# Private docs & external sources
+docs/private/
+docker/opendid/

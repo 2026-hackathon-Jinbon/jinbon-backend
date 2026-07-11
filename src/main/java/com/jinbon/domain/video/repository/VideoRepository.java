@@ -1,8 +1,11 @@
 package com.jinbon.domain.video.repository;
 
 import com.jinbon.domain.video.entity.Video;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface VideoRepository extends JpaRepository<Video, Long> {
@@ -10,4 +13,10 @@ public interface VideoRepository extends JpaRepository<Video, Long> {
     Optional<Video> findByFineHash(String fineHash);
 
     boolean existsByFineHash(String fineHash);
+
+    List<Video> findByActiveTrue();
+
+    Page<Video> findByIssuerDidAndActiveOrderByRegisteredAtDesc(String issuerDid, boolean active, Pageable pageable);
+
+    Page<Video> findByIssuerDidOrderByRegisteredAtDesc(String issuerDid, Pageable pageable);
 }

@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  # ──────────────────────────────────────────
+  # Jinbon Backend Infrastructure
+  # ──────────────────────────────────────────
+
+  postgres:
+    container_name: jinbon-postgres
+    image: postgres:16.4
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: jinbon
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-jinbon}
+      POSTGRES_DB: jinbon
+    volumes:
+      - jinbon_postgres_data:/var/lib/postgresql/data
+
+  redis:
+    container_name: jinbon-redis
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6380:6379"
+    volumes:
+      - jinbon_redis_data:/data
+
+volumes:
+  jinbon_postgres_data:
+  jinbon_redis_data:
