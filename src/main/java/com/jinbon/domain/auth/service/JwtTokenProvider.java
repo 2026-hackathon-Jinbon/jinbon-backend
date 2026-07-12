@@ -36,6 +36,10 @@ public class JwtTokenProvider {
         return createToken(memberId, role, jwtProperties.getRefreshExpiration(), "refresh");
     }
 
+    public String createSignupToken(Long memberId) {
+        return createToken(memberId, "PENDING", 30 * 60 * 1000L, "signup");
+    }
+
     private String createToken(Long memberId, String role, long expiration, String type) {
         Date now = new Date();
         Date validity = new Date(now.getTime() + expiration);

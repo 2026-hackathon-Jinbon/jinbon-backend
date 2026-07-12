@@ -33,22 +33,34 @@ public class Member {
     @Column(nullable = false)
     private MemberRole role;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private MemberStatus status;
+
+    private LocalDateTime didRegisteredAt;
+
+    private LocalDateTime joinedAt;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
     @Builder
-    public Member(String ci, String userDid, String name, String birth, MemberRole role) {
+    public Member(String ci, String userDid, String name, String birth, MemberRole role, MemberStatus status) {
         this.ci = ci;
         this.userDid = userDid;
         this.name = name;
         this.birth = birth;
         this.role = role;
+        this.status = status == null ? MemberStatus.PENDING : status;
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
     }
 
     public void updateDid(String userDid) {
         this.userDid = userDid;
+        this.status = MemberStatus.ACTIVE;
+        this.didRegisteredAt = LocalDateTime.now();
+        this.joinedAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
     }
 }

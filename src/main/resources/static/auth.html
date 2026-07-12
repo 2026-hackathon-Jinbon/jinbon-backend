@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>진본 - 본인인증</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', sans-serif;
+            background: #F5F7FA;
+            color: #1E3A5F;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+        .logo {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1E3A5F;
+            margin-bottom: 8px;
+        }
+        .subtitle {
+            font-size: 14px;
+            color: #6B7B8D;
+            margin-bottom: 40px;
+        }
+        .card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 32px 24px;
+            box-shadow: 0 2px 12px rgba(30,58,95,0.08);
+        }
+        .card h2 {
+            font-size: 18px;
+            margin-bottom: 12px;
+        }
+        .card p {
+            font-size: 14px;
+            color: #6B7B8D;
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .btn:active { opacity: 0.7; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-primary {
+            background: #1E3A5F;
+            color: #fff;
+        }
+        .status {
+            margin-top: 20px;
+            font-size: 13px;
+            color: #6B7B8D;
+            min-height: 20px;
+        }
+        .status.error { color: #E53E3E; }
+        .status.success { color: #38A169; }
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #6B7B8D;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* 단계 표시 */
+        .steps {
+            display: none;
+            margin-top: 16px;
+            text-align: left;
+            font-size: 13px;
+        }
+        .steps .step {
+            padding: 6px 0;
+            color: #A0AEC0;
+        }
+        .steps .step.active { color: #1E3A5F; font-weight: 600; }
+        .steps .step.done { color: #38A169; }
+        .steps .step.done::before { content: "✓ "; }
+        .steps .step.active::before { content: "▸ "; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">진본</div>
+        <div class="subtitle">영상 진본 검증 서비스</div>
+
+        <div class="card">
+            <h2 id="pageTitle">모바일 신분증 인증</h2>
+            <p>OmniOne 모바일 운전면허증으로<br>본인인증을 진행합니다.</p>
+
+            <button class="btn btn-primary" id="btnAuth" onclick="startAuth()">
+                본인인증 시작
+            </button>
+
+            <div class="steps" id="steps">
+                <div class="step" id="step1">인증 세션 생성</div>
+                <div class="step" id="step2">모바일 신분증 앱 호출</div>
+                <div class="step" id="step3">인증 결과 확인</div>
+            </div>
+
+            <div class="status" id="status"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        const mode = new URLSearchParams(window.location.search).get('mode') === 'signup' ? 'signup' : 'login';
+        const apiPrefix = mode === 'signup' ? '/api/signup' : '/api/auth';
+        let authState = {};
+
+        document.getElementById('pageTitle').textContent = mode === 'signup'
+            ? '회원가입 본인인증' : '모바일 신분증 로그인';
+
+        function setStatus(msg, type) {
+            const el = document.getElementById('status');
+            el.className = 'status' + (type ? ' ' + type : '');
+            el.innerHTML = msg;
+        }
+
+        function setStep(num) {
+            document.getElementById('steps').style.display = 'block';
+            for (let i = 1; i <= 3; i++) {
+                const el = document.getElementById('step' + i);
+                el.className = 'step' + (i < num ? ' done' : (i === num ? ' active' : ''));
+            }
+        }
+
+        async function apiCall(url, options) {
+            const res = await fetch(API_BASE + url, options);
+            const json = await res.json();
+            if (json.status !== 200) {
+                const error = new Error(json.message || 'API error');
+                error.code = json.code;
+                throw error;
+            }
+            return json.data;
+        }
+
+        async function startAuth() {
+            const btn = document.getElementById('btnAuth');
+            btn.disabled = true;
+            btn.textContent = '인증 진행 중...';
+
+            try {
+                // STEP 1: 토큰 생성
+                setStep(1);
+                setStatus('<span class="spinner"></span>인증 세션을 생성하는 중...', '');
+
+                const tokenData = await apiCall(apiPrefix + '/token', { method: 'POST' });
+                authState.token = tokenData.token;
+                authState.txId = tokenData.txId;
+
+                // STEP 2: 딥링크 요청
+                setStep(2);
+                setStatus('<span class="spinner"></span>모바일 신분증 앱을 호출하는 중...', '');
+
+                const params = new URLSearchParams({
+                    provider: 'comdl',
+                    token: authState.token,
+                    txId: authState.txId
+                });
+                const appData = await apiCall(apiPrefix + '/app/request?' + params, { method: 'POST' });
+
+                // result API는 trans 토큰이 아닌 app/request 응답 토큰을 사용한다.
+                authState.token = appData.token;
+                authState.cxId = appData.cxId;
+                authState.provider = 'comdl';
+
+                // iOS 딥링크로 이동
+                const iosLink = appData.data.iosLink;
+                if (iosLink) {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.openDeepLink) {
+                        window.webkit.messageHandlers.openDeepLink.postMessage(iosLink);
+                    } else {
+                        window.location.href = iosLink;
+                    }
+                    // 딥링크 호출 후 폴링 시작
+                    setStatus('모바일 신분증 앱에서 인증을 완료해주세요.', '');
+                    startPolling();
+                } else {
+                    throw new Error('Deep link not available');
+                }
+            } catch (e) {
+                setStatus('인증 실패: ' + e.message, 'error');
+                btn.disabled = false;
+                btn.textContent = '본인인증 시작';
+            }
+        }
+
+        function startPolling() {
+            let attempts = 0;
+            const maxAttempts = 60; // 최대 60회 (약 2분)
+            const interval = 2000; // 2초마다
+
+            const timer = setInterval(async () => {
+                attempts++;
+                if (attempts > maxAttempts) {
+                    clearInterval(timer);
+                    setStatus('인증 시간이 초과되었습니다. 다시 시도해주세요.', 'error');
+                    resetButton();
+                    return;
+                }
+
+                try {
+                    await verifyAuth();
+                    clearInterval(timer);
+                } catch (e) {
+                    if (e.code !== 'A007') {
+                        clearInterval(timer);
+                        setStatus('인증 실패: ' + e.message, 'error');
+                        resetButton();
+                    }
+                }
+            }, interval);
+        }
+
+        async function verifyAuth() {
+            setStep(3);
+            setStatus('<span class="spinner"></span>인증 결과를 확인하는 중...', '');
+
+            const data = await apiCall(apiPrefix + '/app/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    provider: authState.provider,
+                    token: authState.token,
+                    txId: authState.txId,
+                    cxId: authState.cxId
+                })
+            });
+
+            // 인증 성공
+            setStatus('인증이 완료되었습니다!', 'success');
+            document.getElementById('step3').className = 'step done';
+
+            // iOS WebView로 결과 전달
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.authCallback) {
+                window.webkit.messageHandlers.authCallback.postMessage(JSON.stringify(data));
+            }
+        }
+
+        function resetButton() {
+            const btn = document.getElementById('btnAuth');
+            btn.disabled = false;
+            btn.textContent = '본인인증 시작';
+        }
+
+        // 앱에서 돌아왔을 때 자동 인증 확인
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden && authState.cxId) {
+                verifyAuth().catch(() => {});
+            }
+        });
+    </script>
+</body>
+</html>

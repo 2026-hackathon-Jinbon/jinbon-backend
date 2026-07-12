@@ -37,6 +37,18 @@
   └─ 8. DB 저장 (영상정보, 해시, Merkle Path, txHash, vcId)
 ```
 
+### 회원가입 / 로그인 플로우
+
+회원가입과 로그인은 명확히 분리됩니다. 로그인 과정에서는 회원을 자동 생성하지 않습니다.
+
+```
+회원가입: 모바일 신분증 인증 → PENDING 회원 생성 → Wallet/DID 생성
+        → DID Document 등록 → 서버 DID 연결 → ACTIVE 전환 → JWT 발급
+
+로그인:   모바일 신분증 인증 → CI로 ACTIVE 회원 조회 → JWT 발급
+        (미가입: 거부 / PENDING: 가입 완료 안내)
+```
+
 ### 영상 검증 플로우
 
 ```
@@ -206,6 +218,10 @@ cp .env.example .env
 | POST | `/api/auth/app/verify` | WebToApp 검증 + 로그인 | X |
 | POST | `/api/auth/refresh` | JWT 토큰 갱신 | X |
 | POST | `/api/auth/logout` | 로그아웃 (Refresh Token 폐기) | X |
+| POST | `/api/signup/token` | 회원가입용 OmniOne CX 토큰 생성 | X |
+| POST | `/api/signup/app/request` | 회원가입용 WebToApp 인증 요청 | X |
+| POST | `/api/signup/app/verify` | 본인확인 + PENDING 회원 생성 | X |
+| POST | `/api/signup/did/complete` | DID 연결 + 회원가입 완료 + JWT 발급 | X (가입 토큰) |
 | POST | `/api/videos` | 영상 등록 (해시 + 블록체인 + VC) | O (ISSUER) |
 | GET | `/api/videos` | 내 영상 목록 조회 | O |
 | GET | `/api/videos/{id}` | 영상 상세 조회 | O |

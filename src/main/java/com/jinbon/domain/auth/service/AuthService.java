@@ -2,8 +2,10 @@ package com.jinbon.domain.auth.service;
 
 import com.jinbon.domain.auth.dto.AuthResponse;
 import com.jinbon.domain.auth.dto.VerifyRequest;
+import com.jinbon.domain.auth.dto.SignupIdentityResponse;
 import com.jinbon.domain.member.entity.Member;
 import com.jinbon.domain.member.entity.MemberRole;
+import com.jinbon.domain.member.entity.MemberStatus;
 import com.jinbon.domain.member.repository.MemberRepository;
 import com.jinbon.global.error.BusinessException;
 import com.jinbon.global.error.ErrorCode;
@@ -52,10 +54,7 @@ public class AuthService {
         OacxResultResponse result = omniOneCxClient.verifyApp(
                 request.provider(), request.token(), request.txId(), request.cxId());
 
-        if (!"200".equals(result.getResultCode())) {
-            log.warn("ID verification failed - resultCode={}, txId={}", result.getResultCode(), request.txId());
-            throw new BusinessException(ErrorCode.ID_VERIFICATION_FAILED);
-        }
+        ensureVerificationCompleted(result);
 
         OacxParsedToken parsed = omniOneCxClient.parseToken(result.getToken());
         return processLogin(parsed);
@@ -82,6 +81,8 @@ public class AuthService {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.MEMBER_NOT_FOUND));
 
+        ensureActive(member);
+
         String role = member.getRole().name();
         String newAccessToken = jwtTokenProvider.createAccessToken(member.getId(), role);
         String newRefreshToken = jwtTokenProvider.createRefreshToken(member.getId(), role);
@@ -89,7 +90,7 @@ public class AuthService {
         refreshTokenService.save(member.getId(), newRefreshToken);
         log.info("Token refreshed - memberId={}, role={}", memberId, role);
 
-        return new AuthResponse(newAccessToken, newRefreshToken, member.getId(), member.getName(), role);
+        return authResponse(member, newAccessToken, newRefreshToken);
     }
 
     /** Refresh Token을 무효화하여 로그아웃 처리한다 */
@@ -103,7 +104,7 @@ public class AuthService {
 
     /**
      * 신원정보로 로그인을 처리한다.
-     * CI로 기존 회원을 조회하고, 없으면 신규 회원을 자동 생성한다.
+     * CI로 가입 완료된 기존 회원만 조회한다. 로그인 과정에서는 회원을 생성하지 않는다.
      */
     private AuthResponse processLogin(OacxParsedToken parsed) {
         String ci = parsed.getCi();
@@ -112,17 +113,10 @@ public class AuthService {
             throw new BusinessException(ErrorCode.CI_NOT_FOUND);
         }
 
-        boolean isNewMember = !memberRepository.findByCi(ci).isPresent();
         Member member = memberRepository.findByCi(ci)
-                .orElseGet(() -> memberRepository.save(
-                        Member.builder()
-                                .ci(ci)
-                                .userDid(parsed.getUserDid())
-                                .name(parsed.getName())
-                                .birth(parsed.getBirth())
-                                .role(MemberRole.USER)
-                                .build()
-                ));
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEMBER_NOT_FOUND));
+
+        ensureActive(member);
 
         String role = member.getRole().name();
         String accessToken = jwtTokenProvider.createAccessToken(member.getId(), role);
@@ -130,9 +124,90 @@ public class AuthService {
 
         refreshTokenService.save(member.getId(), refreshToken);
 
-        log.info("Login successful - memberId={}, name={}, role={}, isNewMember={}",
-                member.getId(), member.getName(), role, isNewMember);
+        log.info("Login successful - memberId={}, name={}, role={}",
+                member.getId(), member.getName(), role);
 
-        return new AuthResponse(accessToken, refreshToken, member.getId(), member.getName(), role);
+        return authResponse(member, accessToken, refreshToken);
+    }
+
+    @Transactional
+    public SignupIdentityResponse verifyAppForSignup(VerifyRequest request) {
+        OacxResultResponse result = omniOneCxClient.verifyApp(
+                request.provider(), request.token(), request.txId(), request.cxId());
+        ensureVerificationCompleted(result);
+        OacxParsedToken parsed = omniOneCxClient.parseToken(result.getToken());
+        if (parsed.getCi() == null) {
+            throw new BusinessException(ErrorCode.CI_NOT_FOUND);
+        }
+
+        Member member = memberRepository.findByCi(parsed.getCi()).orElseGet(() -> memberRepository.save(
+                Member.builder()
+                        .ci(parsed.getCi())
+                        .name(parsed.getName())
+                        .birth(parsed.getBirth())
+                        .role(MemberRole.USER)
+                        .status(MemberStatus.PENDING)
+                        .build()
+        ));
+        if (member.getStatus() == MemberStatus.ACTIVE) {
+            throw new BusinessException(ErrorCode.MEMBER_ALREADY_REGISTERED);
+        }
+        return new SignupIdentityResponse(jwtTokenProvider.createSignupToken(member.getId()),
+                member.getId(), member.getName(), member.getStatus().name());
+    }
+
+    @Transactional
+    public AuthResponse completeSignup(String signupToken, String did) {
+        if (!jwtTokenProvider.validateToken(signupToken)
+                || !"signup".equals(jwtTokenProvider.getTokenType(signupToken))) {
+            throw new BusinessException(ErrorCode.NOT_A_SIGNUP_TOKEN);
+        }
+        Member member = memberRepository.findById(jwtTokenProvider.getMemberId(signupToken))
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEMBER_NOT_FOUND));
+        if (member.getStatus() == MemberStatus.ACTIVE) {
+            if (!did.equals(member.getUserDid())) {
+                throw new BusinessException(ErrorCode.MEMBER_ALREADY_REGISTERED);
+            }
+        } else {
+            memberRepository.findByUserDid(did)
+                    .filter(owner -> !owner.getId().equals(member.getId()))
+                    .ifPresent(owner -> { throw new BusinessException(ErrorCode.DID_ALREADY_REGISTERED); });
+            member.updateDid(did);
+        }
+
+        String role = member.getRole().name();
+        String accessToken = jwtTokenProvider.createAccessToken(member.getId(), role);
+        String refreshToken = jwtTokenProvider.createRefreshToken(member.getId(), role);
+        refreshTokenService.save(member.getId(), refreshToken);
+        return authResponse(member, accessToken, refreshToken);
+    }
+
+    private void ensureActive(Member member) {
+        if (member.getStatus() == MemberStatus.PENDING) {
+            throw new BusinessException(ErrorCode.SIGNUP_NOT_COMPLETED);
+        }
+        if (member.getStatus() != MemberStatus.ACTIVE) {
+            throw new BusinessException(ErrorCode.MEMBER_NOT_ACTIVE);
+        }
+    }
+
+    private void ensureVerificationCompleted(OacxResultResponse result) {
+        String resultCode = result.getResultCode();
+        if ("200".equals(resultCode)) {
+            return;
+        }
+        // 테스트 VC Verifier는 모바일 앱 처리 직후 일시적으로 30020을 반환한 뒤
+        // 동일 세션에서 AFTER_RESULT/200으로 전환되므로 진행 중 상태로 취급한다.
+        if ("402".equals(resultCode) || "408".equals(resultCode) || "30020".equals(resultCode)) {
+            throw new BusinessException(ErrorCode.ID_VERIFICATION_PENDING);
+        }
+        log.warn("ID verification failed - resultCode={}, oacxCode={}, message={}",
+                resultCode, result.getOacxCode(), result.getClientMessage());
+        throw new BusinessException(ErrorCode.ID_VERIFICATION_FAILED);
+    }
+
+    private AuthResponse authResponse(Member member, String accessToken, String refreshToken) {
+        return new AuthResponse(accessToken, refreshToken, member.getId(), member.getName(),
+                member.getRole().name(), member.getStatus().name(), member.getUserDid());
     }
 }

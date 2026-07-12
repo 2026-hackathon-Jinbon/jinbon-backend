@@ -31,7 +31,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // 인증 불필요 API
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/signup/**").permitAll()
                         .requestMatchers("/api/verify/**").permitAll()
+                        .requestMatchers("/auth.html", "/favicon.ico").permitAll()
                         .requestMatchers("/health").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         // 나머지는 인증 필요

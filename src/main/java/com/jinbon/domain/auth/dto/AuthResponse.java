@@ -8,5 +8,7 @@ public record AuthResponse(
         @Schema(description = "JWT 리프레시 토큰", example = "eyJhbGciOiJIUzI1NiJ9...") String refreshToken,
         @Schema(description = "회원 ID", example = "1") Long memberId,
         @Schema(description = "회원 이름", example = "홍길동") String name,
-        @Schema(description = "회원 역할", example = "USER") String role
+        @Schema(description = "회원 역할", example = "USER") String role,
+        @Schema(description = "회원 상태", example = "ACTIVE") String status,
+        @Schema(description = "사용자 DID") String did
 ) {}

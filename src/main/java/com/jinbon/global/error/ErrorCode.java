@@ -10,6 +10,7 @@ public enum ErrorCode {
 
     // Common
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "C001", "Internal server error."),
+    UPLOAD_SIZE_EXCEEDED(HttpStatus.PAYLOAD_TOO_LARGE, "C002", "Upload size exceeds the 100MB limit."),
 
     // Auth
     ID_VERIFICATION_FAILED(HttpStatus.UNAUTHORIZED, "A001", "ID verification failed."),
@@ -17,9 +18,15 @@ public enum ErrorCode {
     NOT_A_REFRESH_TOKEN(HttpStatus.BAD_REQUEST, "A003", "Not a refresh token."),
     REFRESH_TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED, "A004", "Expired or already used refresh token."),
     CI_NOT_FOUND(HttpStatus.BAD_REQUEST, "A005", "Failed to retrieve CI information."),
+    NOT_A_SIGNUP_TOKEN(HttpStatus.BAD_REQUEST, "A006", "Not a signup token."),
+    ID_VERIFICATION_PENDING(HttpStatus.CONFLICT, "A007", "ID verification is still in progress."),
 
     // Member
     MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "M001", "Member not found."),
+    MEMBER_ALREADY_REGISTERED(HttpStatus.CONFLICT, "M002", "Member is already registered."),
+    SIGNUP_NOT_COMPLETED(HttpStatus.CONFLICT, "M003", "DID registration is not completed."),
+    MEMBER_NOT_ACTIVE(HttpStatus.FORBIDDEN, "M004", "Member is not active."),
+    DID_ALREADY_REGISTERED(HttpStatus.CONFLICT, "M005", "DID is already registered."),
 
     // Video
     ISSUER_ROLE_REQUIRED(HttpStatus.FORBIDDEN, "V001", "Only ISSUER role can register videos."),
