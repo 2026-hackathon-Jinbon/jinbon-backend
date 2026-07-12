@@ -2,6 +2,7 @@ package com.jinbon.global.config;
 
 import com.jinbon.infra.omnione.OmniOneCxApi;
 import com.jinbon.infra.opendid.OpenDidIssuerApi;
+import com.jinbon.infra.opendid.OpenDidVerifierApi;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,6 +31,13 @@ public class HttpClientConfig {
     OpenDidIssuerApi openDidIssuerApi(OpenDidProperties properties) {
         RestClient restClient = RestClient.builder().baseUrl(properties.getIssuerServerUrl()).build();
         return createProxy(restClient, OpenDidIssuerApi.class);
+    }
+
+    /** Open DID Verifier Server API 클라이언트 */
+    @Bean
+    OpenDidVerifierApi openDidVerifierApi(OpenDidProperties properties) {
+        RestClient restClient = RestClient.builder().baseUrl(properties.getVerifierServerUrl()).build();
+        return createProxy(restClient, OpenDidVerifierApi.class);
     }
 
     /** RestClient 기반 @HttpExchange 프록시를 생성한다 */

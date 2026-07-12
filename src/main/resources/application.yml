@@ -47,7 +47,9 @@ blockchain:
 
 # Open DID (선택과제 1)
 opendid:
+  enabled: ${OPENDID_ENABLED:true}  # false로 설정 시 VC 발급/검증을 건너뛴다 (Open DID Orchestrator 미구동 환경용)
   issuer-server-url: http://localhost:8091
+  verifier-server-url: http://localhost:8092
   vc-plan-id: vcplan-jinbon-01
   issuer-did: did:omn:issuer
 

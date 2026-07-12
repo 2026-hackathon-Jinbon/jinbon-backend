@@ -22,18 +22,19 @@
   │
   ├─ 1. 모바일 신분증 로그인 (OmniOne CX)
   ├─ 2. 영상 업로드
-  ├─ 3. 해시 생성
-  │     ├─ 지각해시 (DCT 기반 pHash, 프레임별 — 재인코딩 내성)
-  │     └─ SHA-256 (전체 파일 — 정확한 동일성 검증)
-  ├─ 4. 머클트리 생성 (Merkle Root + Merkle Path)
+  ├─ 3. SHA-256 (fineHash) 생성 → 중복 영상 확인
+  ├─ 4. 지각해시 (DCT 기반 pHash, 프레임별 — 재인코딩 내성) 생성
+  ├─ 5. 머클트리 생성 (Merkle Root + Merkle Path) + 전자서명
   │
-  ├─ 5. [선택과제 2] OmniOne Chain 기록
+  ├─ 6. [선택과제 2] OmniOne Chain 기록
   │     → Merkle Root + Issuer DID + Signature → 블록체인 트랜잭션
   │
-  ├─ 6. [선택과제 1] Open DID VC 발급
+  ├─ 7. [선택과제 1] Open DID VC 발급
   │     → "이 영상은 진본 플랫폼에서 인증되었다" 증명서 발급
+  │     → wallet-app-enabled=false: Step 1~3 후 result 폴링으로 vcId 획득
+  │     → wallet-app-enabled=true:  Step 1~5 전체 플로우 (Wallet 앱 E2E 암호화)
   │
-  └─ 7. DB 저장 (영상정보, 해시, Merkle Path, txHash, vcId)
+  └─ 8. DB 저장 (영상정보, 해시, Merkle Path, txHash, vcId)
 ```
 
 ### 영상 검증 플로우
@@ -65,8 +66,8 @@
 | 항목 | 내용 |
 |------|------|
 | 용도 | 공인(Issuer) 로그인 및 본인확인 |
-| 연동 방식 | OmniOne CX VC-Verifier API |
-| 인증 흐름 | QR 스캔 / WebToApp → VP 제출 → 신원 검증 → JWT 발급 |
+| 연동 방식 | OmniOne CX OACX API (trans / authen/app) |
+| 인증 흐름 | WebToApp (token 발급 → 딥링크 생성 → 앱 호출) → OmniOne CX 신원 검증 → CI 기반 회원 처리 → JWT 발급 |
 
 ### 선택과제 1: Open DID
 
@@ -76,7 +77,7 @@
 | 역할 | **"누가, 언제, 이 영상을 등록했는가"** 에 대한 신뢰성 증명 |
 | 구성 | Open DID Orchestrator로 TAS, Issuer, Verifier, CA, Wallet, API 서버 일괄 관리 |
 | 블록체인 | Hyperledger Besu (로컬 Docker) — DID Document 앵커링용 |
-| VC 발급 흐름 | request-offer → inspect-propose → generate-profile → issue-vc → complete-vc |
+| VC 발급 흐름 | request-offer → inspect-propose → generate-profile → (Wallet 앱 연동 시) issue-vc → complete-vc / (미연동 시) result 폴링으로 vcId 획득 |
 | 검증 시 | VC 유효성 확인으로 발급 기관/시점/위변조 여부 판별 |
 
 ### 선택과제 2: OmniOne Chain

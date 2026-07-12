@@ -38,7 +38,8 @@ public enum ErrorCode {
 
     // VC (Open DID)
     VC_ISSUANCE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "D001", "Failed to issue verifiable credential."),
-    VC_REVOCATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "D002", "Failed to revoke verifiable credential.");
+    VC_VERIFICATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "D002", "Failed to verify verifiable credential."),
+    VC_REVOCATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "D003", "Failed to revoke verifiable credential.");
 
     private final HttpStatus status;
     private final String code;

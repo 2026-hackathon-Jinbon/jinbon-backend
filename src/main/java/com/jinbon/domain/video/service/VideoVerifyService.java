@@ -10,6 +10,7 @@ import com.jinbon.global.error.ErrorCode;
 import com.jinbon.infra.blockchain.ContractEncoder;
 import com.jinbon.infra.blockchain.OmniOneChainClient;
 import com.jinbon.infra.download.VideoDownloadService;
+import com.jinbon.infra.opendid.VcVerificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -45,6 +46,7 @@ public class VideoVerifyService {
     private final PerceptualHashService perceptualHashService;
     private final SignatureService signatureService;
     private final OmniOneChainClient omniOneChainClient;
+    private final VcVerificationService vcVerificationService;
     private final VideoDownloadService videoDownloadService;
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper;
@@ -179,8 +181,8 @@ public class VideoVerifyService {
         // 블록체인 검증
         boolean blockchainVerified = verifyOnBlockchain(video);
 
-        // VC 검증 (vcId가 있는 경우)
-        boolean vcVerified = video.getVcId() != null;
+        // VC 검증 — 상태(active) + 서명 무결성 확인
+        boolean vcVerified = verifyVc(video);
 
         log.info("Video verification completed - videoId={}, authentic=true, blockchainVerified={}, vcVerified={}",
                 video.getId(), blockchainVerified, vcVerified);
@@ -240,6 +242,18 @@ public class VideoVerifyService {
             log.warn("Blockchain verification failed - videoId={}, reason={}", video.getId(), e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * VC의 상태(active/revoked/expired)와 서명 무결성을 검증한다.
+     * vcId가 없는 경우(VC 미발급) false를 반환한다.
+     */
+    private boolean verifyVc(Video video) {
+        if (video.getVcId() == null) {
+            log.debug("No VC issued for video - videoId={}", video.getId());
+            return false;
+        }
+        return vcVerificationService.verify(video.getVcId());
     }
 
     private VideoVerifyResponse getCachedResult(String fineHash) {

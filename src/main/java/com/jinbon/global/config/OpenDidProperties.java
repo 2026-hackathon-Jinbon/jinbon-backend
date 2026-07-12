@@ -9,7 +9,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "opendid")
 public class OpenDidProperties {
 
+    private final boolean enabled;
     private final String issuerServerUrl;
+    private final String verifierServerUrl;
     private final String vcPlanId;
     private final String issuerDid;
 }

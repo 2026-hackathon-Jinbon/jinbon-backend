@@ -15,7 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
         인증 불필요 — 영상 진본 여부 검증 API
 
         ## 검증 방식
-        ### 1. URL 검증 (`POST /api/verify/url`) — 권장
+        ### 1. URL 검증 (`POST /api/verify/url`)
         - 유튜브, 인스타, 틱톡 등 영상 URL을 전송하면 서버가 다운로드 후 전체 프레임 분석
         - 가장 정확한 검증 (밀도 높은 프레임 비교)
 
