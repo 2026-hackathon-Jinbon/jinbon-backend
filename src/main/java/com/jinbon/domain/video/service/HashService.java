@@ -45,8 +45,8 @@ public class HashService {
     /** perceptualHash와 fineHash로 머클 루트를 생성한다: SHA-256(perceptualHash + fineHash) */
     public String buildMerkleRoot(String perceptualHash, String fineHash) {
         MessageDigest digest = getSha256();
-        digest.update(perceptualHash.getBytes());
-        digest.update(fineHash.getBytes());
+        digest.update(perceptualHash.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        digest.update(fineHash.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         String merkleRoot = HexFormat.of().formatHex(digest.digest());
         log.debug("Merkle root built - merkleRoot={}", merkleRoot.substring(0, 16) + "...");
         return merkleRoot;

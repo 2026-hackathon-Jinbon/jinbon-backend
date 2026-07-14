@@ -15,16 +15,14 @@ public interface VideoRepository extends JpaRepository<Video, Long> {
 
     Optional<Video> findByFineHash(String fineHash);
 
-    boolean existsByFineHash(String fineHash);
-
     List<Video> findByActiveTrue();
-
-    Page<Video> findByIssuerDidAndActiveOrderByRegisteredAtDesc(String issuerDid, boolean active, Pageable pageable);
-
-    Page<Video> findByIssuerDidOrderByRegisteredAtDesc(String issuerDid, Pageable pageable);
 
     Page<Video> findByMemberIdOrderByRegisteredAtDesc(Long memberId, Pageable pageable);
 
+    /**
+     * memberId가 null인 레거시 영상을 해당 회원에게 귀속시킨다.
+     * DID 재바인딩 또는 목록 조회 시 호출된다.
+     */
     @Modifying
     @Query("update Video v set v.memberId = :memberId where v.memberId is null and v.issuerDid = :issuerDid")
     int claimLegacyVideos(@Param("memberId") Long memberId, @Param("issuerDid") String issuerDid);

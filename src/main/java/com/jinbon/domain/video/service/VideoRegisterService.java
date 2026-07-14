@@ -9,11 +9,14 @@ import com.jinbon.domain.video.entity.Video;
 import com.jinbon.domain.video.repository.VideoRepository;
 import com.jinbon.global.error.BusinessException;
 import com.jinbon.global.error.ErrorCode;
+import com.jinbon.global.config.OpenDidProperties;
 import com.jinbon.infra.blockchain.ContractEncoder;
 import com.jinbon.infra.blockchain.OmniOneChainClient;
 import com.jinbon.infra.opendid.VcIssuanceService;
+import com.jinbon.infra.opendid.VcIssuanceService.VcIssuancePreparation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -48,6 +51,7 @@ public class VideoRegisterService {
     private final SignatureService signatureService;
     private final OmniOneChainClient omniOneChainClient;
     private final VcIssuanceService vcIssuanceService;
+    private final OpenDidProperties openDidProperties;
     private final VideoVerifyService videoVerifyService;
     private final RedisTemplate<String, String> redisTemplate;
 
@@ -68,9 +72,22 @@ public class VideoRegisterService {
         String fineHash = generateFineHash(file);
         log.debug("Fine hash generated - fineHash={}", fineHash.substring(0, 16) + "...");
 
-        // 동일 영상 중복 확인
-        if (videoRepository.existsByFineHash(fineHash)) {
-            log.warn("Duplicate video detected - fineHash={}", fineHash);
+        // 완전히 동일한 파일은 회원에 따라 구분한다.
+        // 같은 회원의 재시도는 기존 결과를 반환하여 블록체인 중복 기록을 방지한다.
+        // 다른 회원의 동일 파일 등록은 소유권을 판정하지 않고 권한 확인 대상으로 차단한다.
+        var existingVideo = videoRepository.findByFineHash(fineHash);
+        if (existingVideo.isPresent()) {
+            Video existing = existingVideo.get();
+            boolean sameMember = memberId.equals(existing.getMemberId())
+                    || (existing.getMemberId() == null && issuerDid.equals(existing.getIssuerDid()));
+            if (sameMember) {
+                log.info("Idempotent video registration - memberId={}, existingVideoId={}", memberId, existing.getId());
+                VcIssuancePreparation preparation = existing.getVcId() == null
+                        ? prepareVcIssuance(existing) : null;
+                return toRegisterResponse(existing, true, preparation);
+            }
+            log.warn("Duplicate video owned by another member - requesterMemberId={}, existingVideoId={}",
+                    memberId, existing.getId());
             throw new BusinessException(ErrorCode.VIDEO_ALREADY_REGISTERED);
         }
 
@@ -90,34 +107,23 @@ public class VideoRegisterService {
         String blockNumber = fetchBlockNumber(txHash);
         log.info("Blockchain recorded - txHash={}, blockNumber={}", txHash, blockNumber);
 
-        // VC 발급 시도 (실패해도 등록은 계속 진행)
-        String vcId = tryIssueVc(issuerDid);
+        // DB 저장 (fineHash unique 제약 위반 시 동시 요청에 의한 중복으로 처리)
+        Video video = Video.create(title, issuerDid, memberId, perceptualHash, fineHash,
+                merkleRoot, merklePath, blockNumber, txHash, signature, 1);
 
-        // DB 저장
-        Video video = Video.builder()
-                .title(title)
-                .issuerDid(issuerDid)
-                .memberId(memberId)
-                .perceptualHash(perceptualHash)
-                .fineHash(fineHash)
-                .merkleRoot(merkleRoot)
-                .merklePath(merklePath)
-                .blockNumber(blockNumber)
-                .txHash(txHash)
-                .signature(signature)
-                .version(1)
-                .vcId(vcId)
-                .build();
-
-        Video saved = videoRepository.save(video);
+        Video saved;
+        try {
+            saved = videoRepository.save(video);
+        } catch (DataIntegrityViolationException e) {
+            log.warn("Concurrent duplicate registration detected - fineHash={}", fineHash.substring(0, 16) + "...");
+            throw new BusinessException(ErrorCode.VIDEO_ALREADY_REGISTERED);
+        }
+        VcIssuancePreparation preparation = prepareVcIssuance(saved);
 
         log.info("Video registration completed - videoId={}, txHash={}, blockNumber={}, vcId={}, issuerDid={}",
-                saved.getId(), txHash, blockNumber, vcId, issuerDid);
+                saved.getId(), txHash, blockNumber, saved.getVcId(), issuerDid);
 
-        return new VideoRegisterResponse(
-                saved.getId(), saved.getTitle(), saved.getMerkleRoot(),
-                saved.getTxHash(), saved.getBlockNumber(), saved.getVcId(),
-                saved.getRegisteredAt());
+        return toRegisterResponse(saved, false, preparation);
     }
 
     /** 내 영상 목록을 페이징 조회한다 */
@@ -161,6 +167,13 @@ public class VideoRegisterService {
         videoVerifyService.evictCache(video.getFineHash());
 
         log.info("Video deactivation completed - videoId={}", videoId);
+    }
+
+    @Transactional
+    public void completeVcIssuance(Long videoId, Long memberId, String vcId) {
+        Video video = findOwnedVideo(videoId, memberId);
+        video.completeVcIssuance(vcId);
+        log.info("Wallet VC issuance confirmed - videoId={}, memberId={}, vcId={}", videoId, memberId, vcId);
     }
 
     private Member findMemberById(Long memberId) {
@@ -231,15 +244,35 @@ public class VideoRegisterService {
         return receipt != null ? (String) receipt.get("blockNumber") : null;
     }
 
-    /** VC 발급을 시도한다 (실패해도 null 반환, 예외 전파하지 않음) */
-    private String tryIssueVc(String issuerDid) {
+    private VcIssuancePreparation prepareVcIssuance(Video video) {
         try {
-            String vcId = vcIssuanceService.issueVideoAuthenticityVc(issuerDid);
-            log.info("VC issued successfully - vcId={}, issuerDid={}", vcId, issuerDid);
-            return vcId;
+            VcIssuancePreparation preparation = vcIssuanceService.prepareVideoVc(
+                    video.getIssuerDid(),
+                    Map.of(
+                            openDidProperties.claimKey("videoHash"), video.getFineHash(),
+                            openDidProperties.claimKey("uploaderDid"), video.getIssuerDid(),
+                            openDidProperties.claimKey("uploadTimestamp"), video.getRegisteredAt().toString(),
+                            openDidProperties.claimKey("videoTitle"), video.getTitle()
+                    )
+            );
+            if (preparation != null) {
+                video.markVcPending();
+            }
+            return preparation;
         } catch (Exception e) {
-            log.warn("VC issuance failed, continuing without VC - issuerDid={}, reason={}", issuerDid, e.getMessage());
+            log.warn("VC preparation failed, video remains registered - videoId={}, reason={}",
+                    video.getId(), e.getMessage());
             return null;
         }
+    }
+
+    private VideoRegisterResponse toRegisterResponse(Video video, boolean alreadyRegistered,
+                                                     VcIssuancePreparation preparation) {
+        return VideoRegisterResponse.from(
+                video, alreadyRegistered,
+                preparation != null ? preparation.vcPlanId() : null,
+                preparation != null ? preparation.issuerDid() : null,
+                preparation != null ? preparation.offerId() : null
+        );
     }
 }

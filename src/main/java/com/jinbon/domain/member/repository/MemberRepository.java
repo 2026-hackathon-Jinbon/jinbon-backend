@@ -7,9 +7,7 @@ import java.util.Optional;
 
 public interface MemberRepository extends JpaRepository<Member, Long> {
 
-    Optional<Member> findByCi(String ci);
+    Optional<Member> findByCiHash(String ciHash);
 
     Optional<Member> findByUserDid(String userDid);
-
-    boolean existsByCi(String ci);
 }

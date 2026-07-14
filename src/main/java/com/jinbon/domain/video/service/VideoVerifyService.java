@@ -20,8 +20,15 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.URI;
+import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.HexFormat;
 import java.util.List;
 
 /**
@@ -104,15 +111,21 @@ public class VideoVerifyService {
      * URL에서 영상을 다운로드하여 검증한다.
      * yt-dlp로 영상을 다운로드한 후, fineHash 정확 매칭 → pHash 유사도 검색 순서로 처리한다.
      * 서버가 전체 영상을 보유하므로 밀도 높은 프레임 분석이 가능하다.
+     *
+     * SSRF 방어: HTTPS 스킴만 허용하고, 내부 네트워크 IP 대역을 차단한다.
      */
     @Transactional(readOnly = true)
     public VideoVerifyResponse verifyByUrl(String url) {
         log.info("URL-based verification started - url={}", url);
 
-        // 캐시 조회 (URL을 키로 사용)
-        VideoVerifyResponse cached = getCachedResult(url);
+        // SSRF 방어: URL 스킴 및 호스트 검증
+        validateUrl(url);
+
+        // 캐시 조회 (URL을 SHA-256 해시로 변환하여 키로 사용 — 악의적 긴 URL 방어)
+        String urlCacheKey = hashUrlForCacheKey(url);
+        VideoVerifyResponse cached = getCachedResult(urlCacheKey);
         if (cached != null) {
-            log.info("Verify cache HIT - url={}, authentic={}", url, cached.authentic());
+            log.info("Verify cache HIT - authentic={}", cached.authentic());
             return cached;
         }
 
@@ -128,7 +141,7 @@ public class VideoVerifyService {
             if (video != null) {
                 log.info("Exact match found from URL - videoId={}", video.getId());
                 VideoVerifyResponse result = buildVerifyResult(video);
-                cacheResult(url, result);
+                cacheResult(urlCacheKey, result);
                 return result;
             }
 
@@ -137,9 +150,9 @@ public class VideoVerifyService {
 
             Video similarVideo = findSimilarVideo(fingerprint);
             if (similarVideo == null) {
-                log.info("No similar video found for URL - url={}", url);
+                log.info("No similar video found for URL");
                 VideoVerifyResponse result = VideoVerifyResponse.notRegistered();
-                cacheResult(url, result);
+                cacheResult(urlCacheKey, result);
                 return result;
             }
 
@@ -148,7 +161,7 @@ public class VideoVerifyService {
                     similarVideo.getId(), String.format("%.1f", distance));
 
             VideoVerifyResponse result = buildVerifyResult(similarVideo);
-            cacheResult(url, result);
+            cacheResult(urlCacheKey, result);
             return result;
 
         } catch (IOException e) {
@@ -294,6 +307,61 @@ public class VideoVerifyService {
         } catch (IOException e) {
             log.error("Failed to generate perceptual hash - fileName={}", file.getOriginalFilename(), e);
             throw new BusinessException(ErrorCode.VIDEO_PROCESSING_FAILED);
+        }
+    }
+
+    // ── SSRF 방어 ──────────────────────────────────────────────
+
+    /**
+     * URL의 스킴과 호스트를 검증하여 SSRF 공격을 차단한다.
+     * - HTTPS 스킴만 허용 (HTTP 차단)
+     * - 내부 네트워크 IP 대역 (10.x, 172.16-31.x, 192.168.x, 127.x, 169.254.x) 차단
+     * - IPv6 루프백/링크로컬 차단
+     */
+    private void validateUrl(String url) {
+        URI uri;
+        try {
+            uri = URI.create(url);
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.VIDEO_DOWNLOAD_FAILED);
+        }
+
+        // HTTPS만 허용
+        if (!"https".equalsIgnoreCase(uri.getScheme())) {
+            log.warn("URL scheme rejected (HTTPS only) - scheme={}", uri.getScheme());
+            throw new BusinessException(ErrorCode.VIDEO_DOWNLOAD_FAILED);
+        }
+
+        String host = uri.getHost();
+        if (host == null || host.isBlank()) {
+            throw new BusinessException(ErrorCode.VIDEO_DOWNLOAD_FAILED);
+        }
+
+        // DNS 확인 후 내부 IP 대역 차단
+        try {
+            InetAddress address = InetAddress.getByName(host);
+            if (address.isLoopbackAddress() || address.isSiteLocalAddress()
+                    || address.isLinkLocalAddress() || address.isAnyLocalAddress()) {
+                log.warn("Internal network access blocked - host={}, ip={}", host, address.getHostAddress());
+                throw new BusinessException(ErrorCode.VIDEO_DOWNLOAD_FAILED);
+            }
+        } catch (UnknownHostException e) {
+            log.warn("DNS resolution failed - host={}", host);
+            throw new BusinessException(ErrorCode.VIDEO_DOWNLOAD_FAILED);
+        }
+    }
+
+    /**
+     * URL을 SHA-256 해시로 변환하여 Redis 캐시 키로 사용한다.
+     * 악의적으로 긴 URL이 Redis 메모리를 낭비하는 것을 방지한다.
+     */
+    private String hashUrlForCacheKey(String url) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(url.getBytes(StandardCharsets.UTF_8));
+            return "url:" + HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
         }
     }
 }

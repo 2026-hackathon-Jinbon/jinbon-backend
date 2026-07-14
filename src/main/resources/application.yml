@@ -56,6 +56,7 @@ opendid:
   issuer-server-url: http://localhost:8091
   verifier-server-url: http://localhost:8092
   vc-plan-id: vcplan-jinbon-01
+  vc-claim-namespace: ${OPENDID_VC_CLAIM_NAMESPACE:ns-jinbon-video-01}
   issuer-did: did:omn:issuer
 
 # JWT
@@ -63,6 +64,11 @@ jwt:
   secret: ${JWT_SECRET:}
   access-expiration: 1800000   # 30분
   refresh-expiration: 604800000  # 7일
+
+# 개인정보 보호: JWT_SECRET과 반드시 다른 32자 이상의 독립 비밀키 사용
+# CI_HMAC_SECRET 환경변수 미설정 시 기동 실패 (보안 정책)
+privacy:
+  ci-hmac-secret: ${CI_HMAC_SECRET:}
 
 # Logging
 logging:

@@ -16,6 +16,17 @@ import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * JWT 토큰 생성/검증 컴포넌트.
+ *
+ * 토큰 종류:
+ * - access: API 인증용 (30분)
+ * - refresh: 토큰 갱신용 (7일)
+ * - signup: 회원가입 DID 연결용 (30분)
+ * - did_rebind: DID 재바인딩용 (10분)
+ *
+ * 모든 토큰에 type 클레임을 포함하여 용도별 검증이 가능하다.
+ */
 @Component
 @RequiredArgsConstructor
 public class JwtTokenProvider {
