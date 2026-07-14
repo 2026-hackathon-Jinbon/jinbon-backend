@@ -20,6 +20,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class JwtTokenProvider {
 
+    private static final long DID_REBIND_EXPIRATION = 10 * 60 * 1000L;
+
     private final JwtProperties jwtProperties;
     private SecretKey key;
 
@@ -38,6 +40,14 @@ public class JwtTokenProvider {
 
     public String createSignupToken(Long memberId) {
         return createToken(memberId, "PENDING", 30 * 60 * 1000L, "signup");
+    }
+
+    public String createDidRebindToken(Long memberId) {
+        return createToken(memberId, "ACTIVE", DID_REBIND_EXPIRATION, "did_rebind");
+    }
+
+    public long getDidRebindExpiration() {
+        return DID_REBIND_EXPIRATION;
     }
 
     private String createToken(Long memberId, String role, long expiration, String type) {

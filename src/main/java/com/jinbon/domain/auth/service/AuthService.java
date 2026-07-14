@@ -7,6 +7,7 @@ import com.jinbon.domain.member.entity.Member;
 import com.jinbon.domain.member.entity.MemberRole;
 import com.jinbon.domain.member.entity.MemberStatus;
 import com.jinbon.domain.member.repository.MemberRepository;
+import com.jinbon.domain.video.repository.VideoRepository;
 import com.jinbon.global.error.BusinessException;
 import com.jinbon.global.error.ErrorCode;
 import com.jinbon.infra.omnione.OmniOneCxClient;
@@ -30,8 +31,10 @@ public class AuthService {
 
     private final OmniOneCxClient omniOneCxClient;
     private final MemberRepository memberRepository;
+    private final VideoRepository videoRepository;
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenService refreshTokenService;
+    private final DidRebindTokenService didRebindTokenService;
 
     /** OmniOne CX 인증 세션 토큰을 발급한다 */
     public com.jinbon.infra.omnione.dto.OacxTokenResponse createOacxToken() {
@@ -90,7 +93,7 @@ public class AuthService {
         refreshTokenService.save(member.getId(), newRefreshToken);
         log.info("Token refreshed - memberId={}, role={}", memberId, role);
 
-        return authResponse(member, newAccessToken, newRefreshToken);
+        return authResponse(member, newAccessToken, newRefreshToken, null);
     }
 
     /** Refresh Token을 무효화하여 로그아웃 처리한다 */
@@ -127,7 +130,9 @@ public class AuthService {
         log.info("Login successful - memberId={}, name={}, role={}",
                 member.getId(), member.getName(), role);
 
-        return authResponse(member, accessToken, refreshToken);
+        String didRebindToken = jwtTokenProvider.createDidRebindToken(member.getId());
+        didRebindTokenService.save(member.getId(), didRebindToken);
+        return authResponse(member, accessToken, refreshToken, didRebindToken);
     }
 
     @Transactional
@@ -179,7 +184,38 @@ public class AuthService {
         String accessToken = jwtTokenProvider.createAccessToken(member.getId(), role);
         String refreshToken = jwtTokenProvider.createRefreshToken(member.getId(), role);
         refreshTokenService.save(member.getId(), refreshToken);
-        return authResponse(member, accessToken, refreshToken);
+        return authResponse(member, accessToken, refreshToken, null);
+    }
+
+    @Transactional
+    public AuthResponse rebindDid(String didRebindToken, String did) {
+        if (!jwtTokenProvider.validateToken(didRebindToken)
+                || !"did_rebind".equals(jwtTokenProvider.getTokenType(didRebindToken))) {
+            throw new BusinessException(ErrorCode.NOT_A_DID_REBIND_TOKEN);
+        }
+
+        Long memberId = jwtTokenProvider.getMemberId(didRebindToken);
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEMBER_NOT_FOUND));
+        ensureActive(member);
+        memberRepository.findByUserDid(did)
+                .filter(owner -> !owner.getId().equals(member.getId()))
+                .ifPresent(owner -> { throw new BusinessException(ErrorCode.DID_ALREADY_REGISTERED); });
+        if (!didRebindTokenService.consume(memberId, didRebindToken)) {
+            throw new BusinessException(ErrorCode.NOT_A_DID_REBIND_TOKEN);
+        }
+
+        String previousDid = member.getUserDid();
+        if (previousDid != null) {
+            videoRepository.claimLegacyVideos(member.getId(), previousDid);
+        }
+        member.rebindDid(did);
+        String role = member.getRole().name();
+        String accessToken = jwtTokenProvider.createAccessToken(member.getId(), role);
+        String refreshToken = jwtTokenProvider.createRefreshToken(member.getId(), role);
+        refreshTokenService.save(member.getId(), refreshToken);
+        log.info("DID reconnected - memberId={}, did={}", member.getId(), did);
+        return authResponse(member, accessToken, refreshToken, null);
     }
 
     private void ensureActive(Member member) {
@@ -188,6 +224,13 @@ public class AuthService {
         }
         if (member.getStatus() != MemberStatus.ACTIVE) {
             throw new BusinessException(ErrorCode.MEMBER_NOT_ACTIVE);
+        }
+        // 진본 정책상 가입 완료 회원은 모두 공인 등록자다.
+        // 기존 버전에서 USER로 저장된 ACTIVE 회원도 인증 시 자동 보정한다.
+        if (member.getRole() != MemberRole.ISSUER) {
+            member.promoteToIssuer();
+            memberRepository.save(member);
+            log.info("Legacy member role promoted to ISSUER - memberId={}", member.getId());
         }
     }
 
@@ -206,8 +249,9 @@ public class AuthService {
         throw new BusinessException(ErrorCode.ID_VERIFICATION_FAILED);
     }
 
-    private AuthResponse authResponse(Member member, String accessToken, String refreshToken) {
+    private AuthResponse authResponse(Member member, String accessToken, String refreshToken,
+                                      String didRebindToken) {
         return new AuthResponse(accessToken, refreshToken, member.getId(), member.getName(),
-                member.getRole().name(), member.getStatus().name(), member.getUserDid());
+                member.getRole().name(), member.getStatus().name(), member.getUserDid(), didRebindToken);
     }
 }

@@ -20,6 +20,7 @@ public enum ErrorCode {
     CI_NOT_FOUND(HttpStatus.BAD_REQUEST, "A005", "Failed to retrieve CI information."),
     NOT_A_SIGNUP_TOKEN(HttpStatus.BAD_REQUEST, "A006", "Not a signup token."),
     ID_VERIFICATION_PENDING(HttpStatus.CONFLICT, "A007", "ID verification is still in progress."),
+    NOT_A_DID_REBIND_TOKEN(HttpStatus.UNAUTHORIZED, "A008", "Invalid or expired DID rebind token."),
 
     // Member
     MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "M001", "Member not found."),

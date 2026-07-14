@@ -58,9 +58,23 @@ public class Member {
 
     public void updateDid(String userDid) {
         this.userDid = userDid;
+        this.role = MemberRole.ISSUER;
         this.status = MemberStatus.ACTIVE;
         this.didRegisteredAt = LocalDateTime.now();
         this.joinedAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
+    }
+
+    public void rebindDid(String userDid) {
+        this.userDid = userDid;
+        this.didRegisteredAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void promoteToIssuer() {
+        if (this.role != MemberRole.ISSUER) {
+            this.role = MemberRole.ISSUER;
+            this.updatedAt = LocalDateTime.now();
+        }
     }
 }

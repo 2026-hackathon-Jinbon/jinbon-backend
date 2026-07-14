@@ -5,127 +5,147 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>진본 - 본인인증</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --navy: #101b36;
+            --blue: #3568f0;
+            --blue-soft: #edf3ff;
+            --canvas: #f5f7fb;
+            --ink: #15213a;
+            --muted: #69758c;
+            --line: #e5e9f2;
+            --success: #18a66a;
+            --danger: #e34d59;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', sans-serif;
-            background: #F5F7FA;
-            color: #1E3A5F;
+            font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+            background: var(--canvas);
+            color: var(--ink);
             min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
+            padding: max(28px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
         }
-        .container {
-            width: 100%;
-            max-width: 400px;
-            text-align: center;
+        .container { width: 100%; max-width: 430px; margin: 0 auto; }
+        .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 34px; }
+        .brand-mark {
+            position: relative; width: 36px; height: 36px; border-radius: 12px;
+            background: linear-gradient(145deg, #4a7cff, #2557df);
+            box-shadow: 0 8px 20px rgba(53, 104, 240, .25);
         }
-        .logo {
-            font-size: 28px;
-            font-weight: 700;
-            color: #1E3A5F;
-            margin-bottom: 8px;
+        .brand-mark::before {
+            content: ""; position: absolute; left: 13px; top: 10px;
+            border-left: 12px solid #fff; border-top: 8px solid transparent; border-bottom: 8px solid transparent;
         }
-        .subtitle {
-            font-size: 14px;
-            color: #6B7B8D;
-            margin-bottom: 40px;
-        }
+        .brand-name { font-size: 17px; font-weight: 800; letter-spacing: -.4px; }
+        .brand-caption { margin-top: 2px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .8px; }
+        .hero { margin-bottom: 24px; }
+        .eyebrow { color: var(--blue); font-size: 12px; font-weight: 800; letter-spacing: .7px; margin-bottom: 10px; }
+        h1 { font-size: 29px; line-height: 1.28; letter-spacing: -1.1px; margin-bottom: 11px; }
+        .hero p { color: var(--muted); font-size: 15px; line-height: 1.65; letter-spacing: -.25px; }
         .card {
-            background: #fff;
-            border-radius: 16px;
-            padding: 32px 24px;
-            box-shadow: 0 2px 12px rgba(30,58,95,0.08);
+            background: #fff; border: 1px solid rgba(229, 233, 242, .8); border-radius: 24px;
+            padding: 22px; box-shadow: 0 14px 40px rgba(16, 27, 54, .07);
         }
-        .card h2 {
-            font-size: 18px;
-            margin-bottom: 12px;
+        .identity-row { display: flex; gap: 14px; align-items: center; margin-bottom: 22px; }
+        .identity-icon {
+            position: relative; flex: 0 0 52px; width: 52px; height: 52px; border-radius: 17px;
+            background: var(--blue-soft);
         }
-        .card p {
-            font-size: 14px;
-            color: #6B7B8D;
-            margin-bottom: 24px;
-            line-height: 1.5;
+        .identity-icon::before {
+            content: ""; position: absolute; width: 18px; height: 22px; left: 17px; top: 13px;
+            border: 2px solid var(--blue); border-radius: 5px;
         }
-        .btn {
-            display: block;
-            width: 100%;
-            padding: 16px;
-            border: none;
-            border-radius: 12px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: opacity 0.2s;
+        .identity-icon::after {
+            content: "✓"; position: absolute; right: 6px; bottom: 5px; width: 17px; height: 17px;
+            color: #fff; background: var(--blue); border: 2px solid #fff; border-radius: 50%;
+            font-size: 10px; line-height: 17px; text-align: center; font-weight: 900;
         }
-        .btn:active { opacity: 0.7; }
-        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .btn-primary {
-            background: #1E3A5F;
-            color: #fff;
+        .identity-title { font-size: 16px; font-weight: 750; margin-bottom: 5px; }
+        .identity-detail { color: var(--muted); font-size: 12px; line-height: 1.45; }
+        .steps { display: none; position: relative; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 6px 0 20px; }
+        .steps::before { content: ""; position: absolute; left: 16%; right: 16%; top: 14px; height: 2px; background: var(--line); }
+        .step { position: relative; padding-top: 37px; color: #9aa4b5; font-size: 11px; text-align: center; line-height: 1.35; }
+        .step::before {
+            content: ""; position: absolute; z-index: 1; width: 27px; height: 27px; top: 0; left: calc(50% - 13.5px);
+            border: 2px solid var(--line); border-radius: 50%; background: #fff;
         }
-        .status {
-            margin-top: 20px;
-            font-size: 13px;
-            color: #6B7B8D;
-            min-height: 20px;
-        }
-        .status.error { color: #E53E3E; }
-        .status.success { color: #38A169; }
+        .step.active { color: var(--blue); font-weight: 700; }
+        .step.active::before { border-color: var(--blue); background: var(--blue-soft); box-shadow: inset 0 0 0 6px #fff; }
+        .step.done { color: var(--success); font-weight: 700; }
+        .step.done::before { content: "✓"; color: #fff; border-color: var(--success); background: var(--success); line-height: 23px; font-weight: 900; }
+        .status { display: none; align-items: center; justify-content: center; min-height: 48px; margin: 4px 0 16px; padding: 12px 14px; border-radius: 14px; background: #f7f9fc; color: var(--muted); font-size: 13px; line-height: 1.45; text-align: center; }
+        .status:not(:empty) { display: flex; }
+        .status.error { color: var(--danger); background: #fff1f2; }
+        .status.success { color: var(--success); background: #ecfbf4; }
         .spinner {
-            display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 2px solid #6B7B8D;
-            border-top-color: transparent;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            vertical-align: middle;
-            margin-right: 6px;
+            display: inline-block; flex: 0 0 auto; width: 16px; height: 16px; margin-right: 8px;
+            border: 2px solid #b7c2d3; border-top-color: var(--blue); border-radius: 50%;
+            animation: spin .8s linear infinite; vertical-align: middle;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-
-        /* 단계 표시 */
-        .steps {
-            display: none;
-            margin-top: 16px;
-            text-align: left;
-            font-size: 13px;
+        .btn {
+            display: block; width: 100%; min-height: 56px; border: 0; border-radius: 17px;
+            font: inherit; font-size: 16px; font-weight: 750; cursor: pointer;
+            transition: transform .15s ease, opacity .15s ease, box-shadow .15s ease;
         }
-        .steps .step {
-            padding: 6px 0;
-            color: #A0AEC0;
+        .btn:active { transform: scale(.985); }
+        .btn:disabled { opacity: .52; cursor: default; transform: none; box-shadow: none; }
+        .btn-primary { color: #fff; background: linear-gradient(135deg, #3d70f5, #2859df); box-shadow: 0 10px 24px rgba(53, 104, 240, .27); }
+        .privacy {
+            display: flex; gap: 11px; margin-top: 16px; padding: 15px 16px; border-radius: 17px;
+            background: var(--navy); color: rgba(255,255,255,.73); font-size: 12px; line-height: 1.55;
         }
-        .steps .step.active { color: #1E3A5F; font-weight: 600; }
-        .steps .step.done { color: #38A169; }
-        .steps .step.done::before { content: "✓ "; }
-        .steps .step.active::before { content: "▸ "; }
+        .privacy-lock { flex: 0 0 auto; color: #7da1ff; font-size: 17px; }
+        .privacy strong { color: #fff; font-weight: 700; }
+        .footnote { margin-top: 19px; color: #8a95a8; font-size: 11px; line-height: 1.55; text-align: center; }
+        @media (max-height: 690px) {
+            body { padding-top: 18px; }
+            .brand { margin-bottom: 20px; }
+            .hero { margin-bottom: 16px; }
+            h1 { font-size: 25px; }
+            .card { padding: 18px; }
+            .privacy { margin-top: 12px; }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="logo">진본</div>
-        <div class="subtitle">영상 진본 검증 서비스</div>
+    <main class="container">
+        <header class="brand">
+            <div class="brand-mark" aria-hidden="true"></div>
+            <div><div class="brand-name">진본</div><div class="brand-caption">CREATOR IDENTITY</div></div>
+        </header>
 
-        <div class="card">
-            <h2 id="pageTitle">모바일 신분증 인증</h2>
-            <p>OmniOne 모바일 운전면허증으로<br>본인인증을 진행합니다.</p>
+        <section class="hero">
+            <div class="eyebrow" id="pageEyebrow">SECURE ID VERIFICATION</div>
+            <h1 id="pageTitle">모바일 신분증으로<br>안전하게 확인할게요</h1>
+            <p id="pageDescription">모바일 운전면허증 앱에서 인증을 완료하면<br>진본으로 안전하게 돌아옵니다.</p>
+        </section>
 
-            <button class="btn btn-primary" id="btnAuth" onclick="startAuth()">
-                본인인증 시작
-            </button>
-
-            <div class="steps" id="steps">
-                <div class="step" id="step1">인증 세션 생성</div>
-                <div class="step" id="step2">모바일 신분증 앱 호출</div>
-                <div class="step" id="step3">인증 결과 확인</div>
+        <section class="card">
+            <div class="identity-row">
+                <div class="identity-icon" aria-hidden="true"></div>
+                <div>
+                    <div class="identity-title">모바일 신분증 본인확인</div>
+                    <div class="identity-detail">정부 모바일 신분증 앱을 통해<br>본인 여부만 안전하게 확인합니다.</div>
+                </div>
             </div>
 
-            <div class="status" id="status"></div>
-        </div>
-    </div>
+            <div class="steps" id="steps">
+                <div class="step" id="step1">요청 준비</div>
+                <div class="step" id="step2">신분증 확인</div>
+                <div class="step" id="step3">인증 완료</div>
+            </div>
+
+            <div class="status" id="status" role="status" aria-live="polite"></div>
+
+            <button class="btn btn-primary" id="btnAuth" onclick="startAuth()">모바일 신분증 앱 열기</button>
+        </section>
+
+        <aside class="privacy">
+            <span class="privacy-lock">●</span>
+            <span><strong>개인정보를 안전하게 보호해요.</strong><br>확인된 정보는 회원 식별과 계정 복구 목적으로만 사용하며 공개 검증 결과에는 노출하지 않습니다.</span>
+        </aside>
+        <p class="footnote">모바일 신분증 앱이 설치되어 있어야 이용할 수 있습니다.</p>
+    </main>
 
     <script>
         const API_BASE = window.location.origin;
@@ -133,8 +153,14 @@
         const apiPrefix = mode === 'signup' ? '/api/signup' : '/api/auth';
         let authState = {};
 
-        document.getElementById('pageTitle').textContent = mode === 'signup'
-            ? '회원가입 본인인증' : '모바일 신분증 로그인';
+        if (mode === 'signup') {
+            document.getElementById('pageEyebrow').textContent = 'CREATE YOUR JINBON ID';
+            document.getElementById('pageTitle').innerHTML = '회원가입 전,<br>본인인지 확인할게요';
+            document.getElementById('pageDescription').innerHTML = '확인이 끝나면 이 기기에 안전한 DID를 만들고<br>진본 등록자 계정을 완성합니다.';
+        } else {
+            document.getElementById('pageEyebrow').textContent = 'WELCOME BACK';
+            document.getElementById('pageTitle').innerHTML = '모바일 신분증으로<br>안전하게 로그인해요';
+        }
 
         function setStatus(msg, type) {
             const el = document.getElementById('status');
@@ -143,7 +169,7 @@
         }
 
         function setStep(num) {
-            document.getElementById('steps').style.display = 'block';
+            document.getElementById('steps').style.display = 'grid';
             for (let i = 1; i <= 3; i++) {
                 const el = document.getElementById('step' + i);
                 el.className = 'step' + (i < num ? ' done' : (i === num ? ' active' : ''));
@@ -164,12 +190,12 @@
         async function startAuth() {
             const btn = document.getElementById('btnAuth');
             btn.disabled = true;
-            btn.textContent = '인증 진행 중...';
+            btn.textContent = '인증을 준비하고 있어요';
 
             try {
                 // STEP 1: 토큰 생성
                 setStep(1);
-                setStatus('<span class="spinner"></span>인증 세션을 생성하는 중...', '');
+                setStatus('<span class="spinner"></span>안전한 인증 요청을 준비하고 있어요', '');
 
                 const tokenData = await apiCall(apiPrefix + '/token', { method: 'POST' });
                 authState.token = tokenData.token;
@@ -177,7 +203,7 @@
 
                 // STEP 2: 딥링크 요청
                 setStep(2);
-                setStatus('<span class="spinner"></span>모바일 신분증 앱을 호출하는 중...', '');
+                setStatus('<span class="spinner"></span>모바일 신분증 앱을 열고 있어요', '');
 
                 const params = new URLSearchParams({
                     provider: 'comdl',
@@ -200,79 +226,100 @@
                         window.location.href = iosLink;
                     }
                     // 딥링크 호출 후 폴링 시작
-                    setStatus('모바일 신분증 앱에서 인증을 완료해주세요.', '');
+                    setStatus('모바일 신분증 앱에서 본인확인을 완료해주세요.', '');
                     startPolling();
                 } else {
                     throw new Error('Deep link not available');
                 }
             } catch (e) {
-                setStatus('인증 실패: ' + e.message, 'error');
+                setStatus('인증을 시작하지 못했습니다. 잠시 후 다시 시도해주세요.', 'error');
                 btn.disabled = false;
-                btn.textContent = '본인인증 시작';
+                btn.textContent = '모바일 신분증 앱 다시 열기';
+            }
+        }
+
+        let pollingTimer = null;
+        let verificationInFlight = false;
+        let authCompleted = false;
+
+        function stopPolling() {
+            if (pollingTimer) {
+                clearTimeout(pollingTimer);
+                pollingTimer = null;
             }
         }
 
         function startPolling() {
+            stopPolling();
             let attempts = 0;
             const maxAttempts = 60; // 최대 60회 (약 2분)
             const interval = 2000; // 2초마다
 
-            const timer = setInterval(async () => {
+            const poll = async () => {
+                if (authCompleted) return;
                 attempts++;
                 if (attempts > maxAttempts) {
-                    clearInterval(timer);
-                    setStatus('인증 시간이 초과되었습니다. 다시 시도해주세요.', 'error');
+                    stopPolling();
+                    setStatus('인증 시간이 초과되었습니다. 처음부터 다시 시도해주세요.', 'error');
                     resetButton();
                     return;
                 }
 
                 try {
                     await verifyAuth();
-                    clearInterval(timer);
                 } catch (e) {
                     if (e.code !== 'A007') {
-                        clearInterval(timer);
-                        setStatus('인증 실패: ' + e.message, 'error');
+                        stopPolling();
+                        setStatus(e.code === 'M001' ? '가입된 계정을 찾지 못했습니다. 회원가입을 먼저 진행해주세요.' : '본인확인을 완료하지 못했습니다. 다시 시도해주세요.', 'error');
                         resetButton();
+                        return;
                     }
                 }
-            }, interval);
+                if (!authCompleted) pollingTimer = setTimeout(poll, interval);
+            };
+            pollingTimer = setTimeout(poll, interval);
         }
 
         async function verifyAuth() {
+            if (verificationInFlight || authCompleted) return;
+            verificationInFlight = true;
             setStep(3);
-            setStatus('<span class="spinner"></span>인증 결과를 확인하는 중...', '');
+            setStatus('<span class="spinner"></span>인증 결과를 안전하게 확인하고 있어요', '');
 
-            const data = await apiCall(apiPrefix + '/app/verify', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    provider: authState.provider,
-                    token: authState.token,
-                    txId: authState.txId,
-                    cxId: authState.cxId
-                })
-            });
+            try {
+                const data = await apiCall(apiPrefix + '/app/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        provider: authState.provider,
+                        token: authState.token,
+                        txId: authState.txId,
+                        cxId: authState.cxId
+                    })
+                });
 
-            // 인증 성공
-            setStatus('인증이 완료되었습니다!', 'success');
-            document.getElementById('step3').className = 'step done';
+                authCompleted = true;
+                stopPolling();
+                setStatus('본인확인이 완료되었습니다. 진본으로 돌아갈게요.', 'success');
+                document.getElementById('step3').className = 'step done';
 
-            // iOS WebView로 결과 전달
-            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.authCallback) {
-                window.webkit.messageHandlers.authCallback.postMessage(JSON.stringify(data));
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.authCallback) {
+                    window.webkit.messageHandlers.authCallback.postMessage(JSON.stringify(data));
+                }
+            } finally {
+                verificationInFlight = false;
             }
         }
 
         function resetButton() {
             const btn = document.getElementById('btnAuth');
             btn.disabled = false;
-            btn.textContent = '본인인증 시작';
+            btn.textContent = '모바일 신분증 앱 다시 열기';
         }
 
         // 앱에서 돌아왔을 때 자동 인증 확인
         document.addEventListener('visibilitychange', function() {
-            if (!document.hidden && authState.cxId) {
+            if (!document.hidden && authState.cxId && !verificationInFlight && !authCompleted) {
                 verifyAuth().catch(() => {});
             }
         });

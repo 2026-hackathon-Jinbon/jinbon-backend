@@ -24,6 +24,8 @@ public class Video {
     @Column(nullable = false)
     private String issuerDid;
 
+    private Long memberId;
+
     @Column(nullable = false, columnDefinition = "TEXT")
     private String perceptualHash;
 
@@ -55,11 +57,12 @@ public class Video {
     private LocalDateTime deactivatedAt;
 
     @Builder
-    private Video(String title, String issuerDid, String perceptualHash, String fineHash,
+    private Video(String title, String issuerDid, Long memberId, String perceptualHash, String fineHash,
                   String merkleRoot, String merklePath, String blockNumber, String txHash,
                   String signature, Integer version, String vcId) {
         this.title = title;
         this.issuerDid = issuerDid;
+        this.memberId = memberId;
         this.perceptualHash = perceptualHash;
         this.fineHash = fineHash;
         this.merkleRoot = merkleRoot;

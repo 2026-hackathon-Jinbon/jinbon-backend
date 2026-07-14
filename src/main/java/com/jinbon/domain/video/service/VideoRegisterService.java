@@ -97,6 +97,7 @@ public class VideoRegisterService {
         Video video = Video.builder()
                 .title(title)
                 .issuerDid(issuerDid)
+                .memberId(memberId)
                 .perceptualHash(perceptualHash)
                 .fineHash(fineHash)
                 .merkleRoot(merkleRoot)
@@ -120,12 +121,13 @@ public class VideoRegisterService {
     }
 
     /** 내 영상 목록을 페이징 조회한다 */
-    @Transactional(readOnly = true)
+    @Transactional
     public Page<VideoDetailResponse> getMyVideos(Long memberId, Pageable pageable) {
         Member member = findMemberById(memberId);
         log.debug("Fetching video list - memberId={}, issuerDid={}, page={}, size={}",
                 memberId, member.getUserDid(), pageable.getPageNumber(), pageable.getPageSize());
-        return videoRepository.findByIssuerDidOrderByRegisteredAtDesc(member.getUserDid(), pageable)
+        videoRepository.claimLegacyVideos(memberId, member.getUserDid());
+        return videoRepository.findByMemberIdOrderByRegisteredAtDesc(memberId, pageable)
                 .map(VideoDetailResponse::from);
     }
 
@@ -172,7 +174,12 @@ public class VideoRegisterService {
         Video video = videoRepository.findById(videoId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.VIDEO_NOT_FOUND));
 
-        if (!video.getIssuerDid().equals(member.getUserDid())) {
+        boolean legacyOwned = video.getMemberId() == null
+                && video.getIssuerDid().equals(member.getUserDid());
+        if (legacyOwned) {
+            videoRepository.claimLegacyVideos(memberId, member.getUserDid());
+        }
+        if (!memberId.equals(video.getMemberId()) && !legacyOwned) {
             log.warn("Video ownership mismatch - videoId={}, videoIssuerDid={}, requestDid={}",
                     videoId, video.getIssuerDid(), member.getUserDid());
             throw new BusinessException(ErrorCode.VIDEO_NOT_OWNED);

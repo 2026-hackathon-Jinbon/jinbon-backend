@@ -10,5 +10,6 @@ public record AuthResponse(
         @Schema(description = "회원 이름", example = "홍길동") String name,
         @Schema(description = "회원 역할", example = "USER") String role,
         @Schema(description = "회원 상태", example = "ACTIVE") String status,
-        @Schema(description = "사용자 DID") String did
+        @Schema(description = "사용자 DID") String did,
+        @Schema(description = "모바일 신분증 로그인 직후 발급되는 DID 재연결용 단기 토큰") String didRebindToken
 ) {}

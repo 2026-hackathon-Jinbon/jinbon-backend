@@ -42,7 +42,9 @@ public class VcIssuanceService {
         try {
             // Step 1: 발급 세션 생성
             Map<String, Object> offerResult = issuerClient.requestOffer();
-            String offerId = (String) offerResult.get("offerId");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> payload = (Map<String, Object>) offerResult.get("issueOfferPayload");
+            String offerId = payload != null ? (String) payload.get("offerId") : null;
             if (offerId == null) {
                 log.error("Offer creation failed - no offerId in response");
                 throw new BusinessException(ErrorCode.VC_ISSUANCE_FAILED);
