@@ -3,7 +3,6 @@ package com.jinbon.global.config;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
-import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -20,11 +19,10 @@ public class SwaggerConfig {
                         .title("진본(JinBon) API")
                         .description("""
                                 진본(JinBon) API 문서
-                                - JWT 토큰 인증 필요
+                                - 회원 영상 관리 API는 JWT 토큰 인증 필요
                                 - 모바일 운전면허증 인증 후 발급받은 JWT 토큰을 Authorization 헤더에 Bearer {token} 형식으로 전달
                                 """)
                         .version("1.0.0"))
-                .addSecurityItem(new SecurityRequirement().addList(securitySchemeName))
                 .components(new Components()
                         .addSecuritySchemes(securitySchemeName, new SecurityScheme()
                                 .name(securitySchemeName)

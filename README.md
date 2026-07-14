@@ -7,7 +7,7 @@
 ## 서비스 개요
 
 **진본**은 영상 콘텐츠의 원본 여부를 블록체인과 DID 기술로 증명하는 플랫폼입니다.
-공인(Issuer)이 영상을 등록하면, 해시 기반 무결성 검증과 VC(Verifiable Credential) 기반 신뢰성 검증을 동시에 수행합니다.
+공인(Issuer)이 영상을 등록하면 해시와 블록체인으로 영상 무결성을 기록하고, 사용자가 Wallet에서 VC(Verifiable Credential)를 발급받아 등록 사실을 증명할 수 있습니다.
 
 서비스의 전체 흐름과 운영 기준은 [진본 서비스 플로우 및 운영 정책](docs/JINBON_FLOW_AND_POLICY.md)을 참고합니다.
 
@@ -31,13 +31,15 @@
   ├─ 6. [선택과제 2] OmniOne Chain 기록
   │     → Merkle Root + Issuer DID + Signature → 블록체인 트랜잭션
   │
-  ├─ 7. [선택과제 1] Open DID VC 발급
-  │     → "이 영상은 진본 플랫폼에서 인증되었다" 증명서 발급
-  │     → wallet-app-enabled=false: Step 1~3 후 result 폴링으로 vcId 획득
-  │     → wallet-app-enabled=true:  Step 1~5 전체 플로우 (Wallet 앱 E2E 암호화)
+  ├─ 7. DB 저장 (영상정보, 해시, Merkle Path, txHash)
   │
-  └─ 8. DB 저장 (영상정보, 해시, Merkle Path, txHash, vcId)
+  └─ 8. [선택과제 1] Open DID VC 발급 준비
+        → 서버가 Holder DID와 영상 Claim을 Issuer에 등록하고 발급 Offer 생성
+        → 앱이 Wallet 프로토콜로 사용자 동의·PIN 인증 후 VC 수령 및 저장
+        → 발급 완료 API로 vcId를 서버 영상 정보에 연결
 ```
+
+영상 등록과 VC 발급은 별도 단계입니다. 영상의 블록체인 등록이 완료되면 VC 발급을 취소하거나 일시적으로 실패해도 영상 등록 결과는 유지되며, 이후 Wallet에서 다시 발급받을 수 있습니다.
 
 ### 회원가입 / 로그인 플로우
 
@@ -50,6 +52,8 @@
 로그인:   모바일 신분증 인증 → CI로 ACTIVE 회원 조회 → JWT 발급
         (미가입: 거부 / PENDING: 가입 완료 안내)
 ```
+
+CI 원문은 저장하지 않습니다. 인증 직후 서버 전용 비밀키로 `HMAC-SHA256` 처리한 식별자만 회원 중복 확인·로그인·DID 복구에 사용하며, VC·DID Document·블록체인에는 포함하지 않습니다. `CI_HMAC_SECRET`은 32자 이상의 고정값으로 별도 보관하고 변경 또는 분실하지 않아야 합니다.
 
 앱 재설치·기기 변경 시 DID 및 영상 진본 VC를 복구하는 상세 규격은
 [VC 재발급 프로토콜](docs/vc-reissuance-protocol.md)을 참고합니다.
@@ -94,7 +98,7 @@
 | 역할 | **"누가, 언제, 이 영상을 등록했는가"** 에 대한 신뢰성 증명 |
 | 구성 | Open DID Orchestrator로 TAS, Issuer, Verifier, CA, Wallet, API 서버 일괄 관리 |
 | 블록체인 | Hyperledger Besu (로컬 Docker) — DID Document 앵커링용 |
-| VC 발급 흐름 | request-offer → inspect-propose → generate-profile → (Wallet 앱 연동 시) issue-vc → complete-vc / (미연동 시) result 폴링으로 vcId 획득 |
+| VC 발급 흐름 | 백엔드가 Holder/Claim 등록 및 발급 Offer 생성 → 앱 Wallet이 offerId로 사용자 동의·PIN 인증 → issue-vc → confirm → 로컬 저장 → 백엔드에 vcId 연결 |
 | 검증 시 | VC 유효성 확인으로 발급 기관/시점/위변조 여부 판별 |
 
 ### 선택과제 2: OmniOne Chain
@@ -151,7 +155,7 @@ src/main/java/com/jinbon/
 │   └── error/             #   예외 처리
 └── infra/                 # 외부 연동
     ├── omnione/           #   OmniOne CX 클라이언트
-    ├── opendid/           #   Open DID Issuer 클라이언트 + VC 발급
+    ├── opendid/           #   Open DID Issuer 연동 + Wallet VC 발급 준비/검증
     ├── blockchain/        #   OmniOne Chain 클라이언트
     └── redis/             #   Redis 캐시
 ```
@@ -227,9 +231,20 @@ cp .env.example .env
 | POST | `/api/signup/app/request` | 회원가입용 WebToApp 인증 요청 | X |
 | POST | `/api/signup/app/verify` | 본인확인 + PENDING 회원 생성 | X |
 | POST | `/api/signup/did/complete` | DID 연결 + 회원가입 완료 + JWT 발급 | X (가입 토큰) |
-| POST | `/api/videos` | 영상 등록 (해시 + 블록체인 + VC) | O (ISSUER) |
+| POST | `/api/videos` | 영상 등록 (해시 + 블록체인) 및 Wallet VC 발급 준비 | O (ISSUER) |
+| POST | `/api/videos/{id}/vc/complete` | Wallet VC 발급 완료 후 vcId 연결 | O (ISSUER, 본인 영상) |
 | GET | `/api/videos` | 내 영상 목록 조회 | O |
 | GET | `/api/videos/{id}` | 영상 상세 조회 | O |
 | PATCH | `/api/videos/{id}/deactivate` | 영상 비활성화 | O (ISSUER) |
 | POST | `/api/verify` | 영상 진본 검증 (파일 업로드) | X |
 | POST | `/api/verify/url` | 영상 진본 검증 (URL 기반, 서버 다운로드 후 전체 분석) | X |
+
+### 영상 VC 발급 상태
+
+| 상태 | 의미 |
+|------|------|
+| `NOT_REQUESTED` | VC 발급을 아직 준비하지 않았거나 준비에 실패한 상태 |
+| `PENDING_WALLET` | 서버 준비가 끝나 Wallet에서 사용자 발급을 기다리는 상태 |
+| `ISSUED` | Wallet 발급이 완료되어 vcId가 영상에 연결된 상태 |
+
+기존 데이터는 `vcIssuanceStatus`가 `null`일 수 있습니다. 이 경우 `vcId`가 있으면 발급 완료, 없으면 미발급으로 해석합니다.

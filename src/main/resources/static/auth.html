@@ -117,7 +117,6 @@
         <section class="hero">
             <div class="eyebrow" id="pageEyebrow">SECURE ID VERIFICATION</div>
             <h1 id="pageTitle">모바일 신분증으로<br>안전하게 확인할게요</h1>
-            <p id="pageDescription">모바일 운전면허증 앱에서 인증을 완료하면<br>진본으로 안전하게 돌아옵니다.</p>
         </section>
 
         <section class="card">
@@ -152,6 +151,9 @@
         const mode = new URLSearchParams(window.location.search).get('mode') === 'signup' ? 'signup' : 'login';
         const apiPrefix = mode === 'signup' ? '/api/signup' : '/api/auth';
         let authState = {};
+        let pollingTimer = null;
+        let verificationInFlight = false;
+        let authCompleted = false;
 
         if (mode === 'signup') {
             document.getElementById('pageEyebrow').textContent = 'CREATE YOUR JINBON ID';
@@ -176,6 +178,14 @@
             }
         }
 
+        function authLog(event, details = {}) {
+            const payload = { event, mode, ...details };
+            console.log('[JinBonAuth]', payload);
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.authLog) {
+                window.webkit.messageHandlers.authLog.postMessage(payload);
+            }
+        }
+
         async function apiCall(url, options) {
             const res = await fetch(API_BASE + url, options);
             const json = await res.json();
@@ -193,6 +203,7 @@
             btn.textContent = '인증을 준비하고 있어요';
 
             try {
+                authLog('start');
                 // STEP 1: 토큰 생성
                 setStep(1);
                 setStatus('<span class="spinner"></span>안전한 인증 요청을 준비하고 있어요', '');
@@ -200,6 +211,7 @@
                 const tokenData = await apiCall(apiPrefix + '/token', { method: 'POST' });
                 authState.token = tokenData.token;
                 authState.txId = tokenData.txId;
+                authLog('token_created', { txId: authState.txId });
 
                 // STEP 2: 딥링크 요청
                 setStep(2);
@@ -216,6 +228,12 @@
                 authState.token = appData.token;
                 authState.cxId = appData.cxId;
                 authState.provider = 'comdl';
+                authLog('deep_link_created', {
+                    txId: authState.txId,
+                    cxId: authState.cxId,
+                    hasData: !!appData.data,
+                    hasIosLink: !!(appData.data && appData.data.iosLink)
+                });
 
                 // iOS 딥링크로 이동
                 const iosLink = appData.data.iosLink;
@@ -232,15 +250,15 @@
                     throw new Error('Deep link not available');
                 }
             } catch (e) {
+                authLog('start_failed', {
+                    code: e && e.code ? e.code : null,
+                    message: e && e.message ? e.message : String(e)
+                });
                 setStatus('인증을 시작하지 못했습니다. 잠시 후 다시 시도해주세요.', 'error');
                 btn.disabled = false;
                 btn.textContent = '모바일 신분증 앱 다시 열기';
             }
         }
-
-        let pollingTimer = null;
-        let verificationInFlight = false;
-        let authCompleted = false;
 
         function stopPolling() {
             if (pollingTimer) {
@@ -287,6 +305,7 @@
             setStatus('<span class="spinner"></span>인증 결과를 안전하게 확인하고 있어요', '');
 
             try {
+                authLog('verify_requested', { txId: authState.txId, cxId: authState.cxId });
                 const data = await apiCall(apiPrefix + '/app/verify', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -299,6 +318,7 @@
                 });
 
                 authCompleted = true;
+                authLog('verify_completed', { txId: authState.txId, cxId: authState.cxId });
                 stopPolling();
                 setStatus('본인확인이 완료되었습니다. 진본으로 돌아갈게요.', 'success');
                 document.getElementById('step3').className = 'step done';
@@ -306,6 +326,14 @@
                 if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.authCallback) {
                     window.webkit.messageHandlers.authCallback.postMessage(JSON.stringify(data));
                 }
+            } catch (e) {
+                authLog('verify_failed', {
+                    txId: authState.txId,
+                    cxId: authState.cxId,
+                    code: e && e.code ? e.code : null,
+                    message: e && e.message ? e.message : String(e)
+                });
+                throw e;
             } finally {
                 verificationInFlight = false;
             }

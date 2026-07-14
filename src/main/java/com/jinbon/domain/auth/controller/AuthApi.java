@@ -79,8 +79,10 @@ public interface AuthApi {
                     **처리 흐름:**
                     1. OmniOne CX에서 신분증 검증
                     2. 검증된 신원정보(CI, 이름, 생년월일) 추출
-                    3. CI 기반 자동 회원가입 또는 기존 회원 조회
+                    3. CI로 가입 완료(ACTIVE) 회원 조회
                     4. JWT accessToken + refreshToken 발급
+
+                    미가입 회원은 로그인할 수 없으며 `/api/signup` 흐름을 먼저 완료해야 합니다.
 
                     **응답의 `accessToken`을 이후 API 호출 시 `Authorization: Bearer {token}` 헤더에 포함하세요.**
                     **`refreshToken`은 accessToken 만료 시 갱신용으로 안전하게 보관하세요.**
