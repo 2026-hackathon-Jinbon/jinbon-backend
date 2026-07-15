@@ -8,6 +8,7 @@ import com.jinbon.domain.video.repository.VideoRepository;
 import com.jinbon.global.error.BusinessException;
 import com.jinbon.global.error.ErrorCode;
 import com.jinbon.infra.blockchain.ContractEncoder;
+import com.jinbon.infra.blockchain.ContractDecoder;
 import com.jinbon.infra.blockchain.OmniOneChainClient;
 import com.jinbon.infra.download.VideoDownloadService;
 import com.jinbon.infra.opendid.VcVerificationService;
@@ -30,6 +31,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 영상 검증 서비스.
@@ -47,6 +49,10 @@ public class VideoVerifyService {
 
     private static final String VERIFY_CACHE_KEY_PREFIX = "verify:result:";
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
+    private static final Set<String> ALLOWED_VIDEO_HOSTS = Set.of(
+            "youtube.com", "youtu.be", "instagram.com", "tiktok.com",
+            "twitter.com", "x.com", "vimeo.com"
+    );
 
     private final VideoRepository videoRepository;
     private final HashService hashService;
@@ -197,12 +203,13 @@ public class VideoVerifyService {
         // VC 검증 — 상태(active) + 서명 무결성 확인
         boolean vcVerified = verifyVc(video);
 
-        log.info("Video verification completed - videoId={}, authentic=true, blockchainVerified={}, vcVerified={}",
-                video.getId(), blockchainVerified, vcVerified);
+        boolean authentic = blockchainVerified;
+        log.info("Video verification completed - videoId={}, authentic={}, blockchainVerified={}, vcVerified={}",
+                video.getId(), authentic, blockchainVerified, vcVerified);
 
-        return new VideoVerifyResponse(true, video.getId(), video.getIssuerDid(),
+        return new VideoVerifyResponse(authentic, video.getId(), video.getIssuerDid(),
                 video.getRegisteredAt(), blockchainVerified, vcVerified, true,
-                "Video is authentic.");
+                authentic ? "Video is authentic." : "Video matched, but blockchain verification failed.");
     }
 
     /**
@@ -236,7 +243,9 @@ public class VideoVerifyService {
             String callData = ContractEncoder.encodeGetRecord(video.getMerkleRoot());
             String result = omniOneChainClient.ethCall(callData);
 
-            if (result == null || result.equals("0x") || result.equals("0x0")) {
+            ContractDecoder.VideoRecord record = ContractDecoder.decodeGetRecord(result);
+            if (!record.registered() || !record.active()
+                    || !video.getIssuerDid().equals(record.issuerDid())) {
                 log.warn("No blockchain record found - videoId={}, merkleRoot={}",
                         video.getId(), video.getMerkleRoot());
                 return false;
@@ -336,14 +345,26 @@ public class VideoVerifyService {
         if (host == null || host.isBlank()) {
             throw new BusinessException(ErrorCode.VIDEO_DOWNLOAD_FAILED);
         }
+        String normalizedHost = host.toLowerCase(java.util.Locale.ROOT);
+        if (uri.getUserInfo() != null || uri.getPort() != -1 || ALLOWED_VIDEO_HOSTS.stream()
+                .noneMatch(allowed -> normalizedHost.equals(allowed) || normalizedHost.endsWith("." + allowed))) {
+            log.warn("Video host rejected - host={}", normalizedHost);
+            throw new BusinessException(ErrorCode.VIDEO_DOWNLOAD_FAILED);
+        }
 
-        // DNS 확인 후 내부 IP 대역 차단
+        // DNS 응답 전체를 확인하여 혼합 public/private 응답도 차단한다.
         try {
-            InetAddress address = InetAddress.getByName(host);
-            if (address.isLoopbackAddress() || address.isSiteLocalAddress()
-                    || address.isLinkLocalAddress() || address.isAnyLocalAddress()) {
-                log.warn("Internal network access blocked - host={}, ip={}", host, address.getHostAddress());
+            InetAddress[] addresses = InetAddress.getAllByName(normalizedHost);
+            if (addresses.length == 0) {
                 throw new BusinessException(ErrorCode.VIDEO_DOWNLOAD_FAILED);
+            }
+            for (InetAddress address : addresses) {
+                if (address.isLoopbackAddress() || address.isSiteLocalAddress()
+                        || address.isLinkLocalAddress() || address.isAnyLocalAddress()
+                        || address.isMulticastAddress()) {
+                    log.warn("Internal network access blocked - host={}, ip={}", host, address.getHostAddress());
+                    throw new BusinessException(ErrorCode.VIDEO_DOWNLOAD_FAILED);
+                }
             }
         } catch (UnknownHostException e) {
             log.warn("DNS resolution failed - host={}", host);

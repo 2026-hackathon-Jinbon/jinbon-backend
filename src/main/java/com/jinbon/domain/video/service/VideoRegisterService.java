@@ -51,6 +51,7 @@ public class VideoRegisterService {
     private final SignatureService signatureService;
     private final OmniOneChainClient omniOneChainClient;
     private final VcIssuanceService vcIssuanceService;
+    private final com.jinbon.infra.opendid.VcVerificationService vcVerificationService;
     private final OpenDidProperties openDidProperties;
     private final VideoVerifyService videoVerifyService;
     private final RedisTemplate<String, String> redisTemplate;
@@ -172,6 +173,9 @@ public class VideoRegisterService {
     @Transactional
     public void completeVcIssuance(Long videoId, Long memberId, String vcId) {
         Video video = findOwnedVideo(videoId, memberId);
+        if (!vcVerificationService.verify(vcId)) {
+            throw new BusinessException(ErrorCode.VC_VERIFICATION_FAILED);
+        }
         video.completeVcIssuance(vcId);
         log.info("Wallet VC issuance confirmed - videoId={}, memberId={}, vcId={}", videoId, memberId, vcId);
     }
@@ -240,8 +244,26 @@ public class VideoRegisterService {
 
     /** 트랜잭션 영수증에서 블록 번호를 추출한다 */
     private String fetchBlockNumber(String txHash) {
-        Map<String, Object> receipt = omniOneChainClient.getTransactionReceipt(txHash);
-        return receipt != null ? (String) receipt.get("blockNumber") : null;
+        for (int attempt = 0; attempt < 20; attempt++) {
+            Map<String, Object> receipt = omniOneChainClient.getTransactionReceipt(txHash);
+            if (receipt != null) {
+                if (!"0x1".equals(receipt.get("status"))) {
+                    throw new BusinessException(ErrorCode.BLOCKCHAIN_TX_FAILED);
+                }
+                Object blockNumber = receipt.get("blockNumber");
+                if (blockNumber == null) {
+                    throw new BusinessException(ErrorCode.BLOCKCHAIN_TX_FAILED);
+                }
+                return blockNumber.toString();
+            }
+            try {
+                Thread.sleep(250);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new BusinessException(ErrorCode.BLOCKCHAIN_TX_FAILED);
+            }
+        }
+        throw new BusinessException(ErrorCode.BLOCKCHAIN_TX_FAILED);
     }
 
     private VcIssuancePreparation prepareVcIssuance(Video video) {
@@ -266,8 +288,11 @@ public class VideoRegisterService {
         }
     }
 
-    private VideoRegisterResponse toRegisterResponse(Video video, boolean alreadyRegistered,
-                                                     VcIssuancePreparation preparation) {
+    private VideoRegisterResponse toRegisterResponse(
+            Video video,
+            boolean alreadyRegistered,
+            VcIssuancePreparation preparation
+    ) {
         return VideoRegisterResponse.from(
                 video, alreadyRegistered,
                 preparation != null ? preparation.vcPlanId() : null,

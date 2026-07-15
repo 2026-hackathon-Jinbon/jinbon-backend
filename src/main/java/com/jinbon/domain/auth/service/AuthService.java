@@ -79,11 +79,6 @@ public class AuthService {
 
         Long memberId = jwtTokenProvider.getMemberId(refreshToken);
 
-        if (!refreshTokenService.validate(memberId, refreshToken)) {
-            log.warn("Refresh token expired or already used - memberId={}", memberId);
-            throw new BusinessException(ErrorCode.REFRESH_TOKEN_EXPIRED);
-        }
-
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.MEMBER_NOT_FOUND));
 
@@ -93,7 +88,10 @@ public class AuthService {
         String newAccessToken = jwtTokenProvider.createAccessToken(member.getId(), role);
         String newRefreshToken = jwtTokenProvider.createRefreshToken(member.getId(), role);
 
-        refreshTokenService.save(member.getId(), newRefreshToken);
+        if (!refreshTokenService.rotate(memberId, refreshToken, newRefreshToken)) {
+            log.warn("Refresh token expired or already used - memberId={}", memberId);
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_EXPIRED);
+        }
         log.info("Token refreshed - memberId={}, role={}", memberId, role);
 
         return authResponse(member, newAccessToken, newRefreshToken, null);

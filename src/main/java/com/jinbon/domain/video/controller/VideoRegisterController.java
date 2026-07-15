@@ -40,7 +40,7 @@ public class VideoRegisterController implements VideoRegisterApi {
     @GetMapping
     @Override
     public ResponseEntity<CommonResponse<Page<VideoDetailResponse>>> getMyVideos(
-            @PageableDefault(size = 10) Pageable pageable,
+            @PageableDefault Pageable pageable,
             Authentication authentication
     ) {
         Long memberId = Long.parseLong(authentication.getName());

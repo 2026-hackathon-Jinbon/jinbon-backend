@@ -2,9 +2,11 @@ package com.jinbon.domain.auth.service;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.TimeUnit;
+import java.util.List;
 
 /**
  * Refresh Token 관리 서비스.
@@ -33,6 +35,21 @@ public class RefreshTokenService {
         String key = KEY_PREFIX + memberId;
         String stored = redisTemplate.opsForValue().get(key);
         return refreshToken.equals(stored);
+    }
+
+    /** 기존 토큰이 일치할 때만 새 토큰으로 원자적으로 교체한다. */
+    public boolean rotate(Long memberId, String oldToken, String newToken) {
+        String script = """
+                if redis.call('get', KEYS[1]) == ARGV[1] then
+                    redis.call('psetex', KEYS[1], ARGV[3], ARGV[2])
+                    return 1
+                end
+                return 0
+                """;
+        DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>(script, Long.class);
+        Long result = redisTemplate.execute(redisScript, List.of(KEY_PREFIX + memberId),
+                oldToken, newToken, String.valueOf(jwtTokenProvider.getRefreshExpiration()));
+        return Long.valueOf(1L).equals(result);
     }
 
     /** Refresh Token을 삭제한다 (로그아웃) */

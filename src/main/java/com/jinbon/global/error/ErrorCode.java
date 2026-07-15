@@ -17,6 +17,7 @@ public enum ErrorCode {
     // Common
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "C001", "Internal server error."),
     UPLOAD_SIZE_EXCEEDED(HttpStatus.PAYLOAD_TOO_LARGE, "C002", "Upload size exceeds the 100MB limit."),
+    INVALID_REQUEST(HttpStatus.BAD_REQUEST, "C003", "Invalid request."),
 
     // Auth
     ID_VERIFICATION_FAILED(HttpStatus.UNAUTHORIZED, "A001", "ID verification failed."),

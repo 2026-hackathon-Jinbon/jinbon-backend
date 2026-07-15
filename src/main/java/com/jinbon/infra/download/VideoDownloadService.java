@@ -5,13 +5,12 @@ import com.jinbon.global.error.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Semaphore;
 
 /**
  * yt-dlp를 이용한 영상 다운로드 서비스.
@@ -30,6 +29,8 @@ public class VideoDownloadService {
 
     /** 최대 파일 크기 (500MB) */
     private static final long MAX_FILE_SIZE = 500 * 1024 * 1024;
+    private static final int MAX_CONCURRENT_DOWNLOADS = 4;
+    private final Semaphore downloadSlots = new Semaphore(MAX_CONCURRENT_DOWNLOADS);
 
     /**
      * URL에서 영상을 다운로드하여 임시 파일 경로를 반환한다.
@@ -41,33 +42,35 @@ public class VideoDownloadService {
     public Path download(String url) {
         log.info("Video download started - url={}", url);
 
+        if (!downloadSlots.tryAcquire()) {
+            log.warn("Video download capacity exceeded");
+            throw new BusinessException(ErrorCode.VIDEO_DOWNLOAD_FAILED);
+        }
+
         try {
             Path tempDir = Files.createTempDirectory("jinbon-download-");
             String outputTemplate = tempDir.resolve("video.%(ext)s").toString();
 
             ProcessBuilder pb = new ProcessBuilder(
                     "yt-dlp",
+                    "--no-config",
                     "--no-playlist",
+                    "--socket-timeout", "15",
+                    "--retries", "2",
                     "--max-filesize", String.valueOf(MAX_FILE_SIZE),
                     "-f", "best[height<=1080]",
                     "-o", outputTemplate,
                     url
             );
-            pb.redirectErrorStream(true);
+            pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
 
             Process process = pb.start();
-
-            // 프로세스 로그 출력
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    log.debug("yt-dlp: {}", line);
-                }
-            }
 
             boolean completed = process.waitFor(DOWNLOAD_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             if (!completed) {
                 process.destroyForcibly();
+                process.waitFor(5, TimeUnit.SECONDS);
                 cleanupDir(tempDir);
                 log.error("Video download timed out - url={}", url);
                 throw new BusinessException(ErrorCode.VIDEO_DOWNLOAD_FAILED);
@@ -88,15 +91,25 @@ public class VideoDownloadService {
             }
 
             Path downloadedFile = files[0].toPath();
+            if (!Files.isRegularFile(downloadedFile) || Files.size(downloadedFile) > MAX_FILE_SIZE) {
+                cleanupDir(tempDir);
+                throw new BusinessException(ErrorCode.VIDEO_DOWNLOAD_FAILED);
+            }
             log.info("Video download completed - url={}, file={}, size={}bytes",
                     url, downloadedFile.getFileName(), Files.size(downloadedFile));
             return downloadedFile;
 
         } catch (BusinessException e) {
             throw e;
-        } catch (IOException | InterruptedException e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("Video download interrupted - url={}", url, e);
+            throw new BusinessException(ErrorCode.VIDEO_DOWNLOAD_FAILED);
+        } catch (IOException e) {
             log.error("Video download error - url={}", url, e);
             throw new BusinessException(ErrorCode.VIDEO_DOWNLOAD_FAILED);
+        } finally {
+            downloadSlots.release();
         }
     }
 
