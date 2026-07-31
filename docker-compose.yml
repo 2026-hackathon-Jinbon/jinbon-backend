@@ -10,7 +10,7 @@ services:
     image: postgres:16.4
     restart: always
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: jinbon
       POSTGRES_PASSWORD: ${DB_PASSWORD:-jinbon}
