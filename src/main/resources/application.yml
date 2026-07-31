@@ -33,7 +33,7 @@ spring:
       port: 6380
 
 server:
-  port: 8080
+  port: ${SERVER_PORT:8070}
 
 # OmniOne CX (모바일 신분증 - 필수과제)
 omnione:
