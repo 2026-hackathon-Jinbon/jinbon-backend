@@ -88,6 +88,20 @@ public interface VideoRegisterApi {
             @Parameter(description = "Wallet에서 발급된 VC 정보", required = true) CompleteVideoVcRequest request,
             @Parameter(hidden = true) Authentication authentication);
 
+    @Operation(summary = "Wallet VC 발급 준비 또는 재개", description = """
+            이미 등록된 영상에 대해 Wallet VC 발급 문맥을 준비합니다.
+            기존 PENDING_WALLET 문맥이 있으면 같은 Offer를 반환하므로 영상 파일을 다시 업로드할 필요가 없습니다.
+            """)
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "VC 발급 문맥 반환"),
+            @ApiResponse(responseCode = "403", description = "본인 영상이 아님"),
+            @ApiResponse(responseCode = "404", description = "영상 없음"),
+            @ApiResponse(responseCode = "500", description = "Open DID 발급 준비 실패")
+    })
+    ResponseEntity<CommonResponse<VideoRegisterResponse>> prepareVc(
+            @Parameter(description = "영상 ID", required = true) Long videoId,
+            @Parameter(hidden = true) Authentication authentication);
+
     @Operation(summary = "영상 비활성화", description = "등록된 영상을 비활성화합니다. 블록체인에도 비활성화 트랜잭션이 기록됩니다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "비활성화 성공"),

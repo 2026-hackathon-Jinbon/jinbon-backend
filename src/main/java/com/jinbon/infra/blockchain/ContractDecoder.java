@@ -24,17 +24,19 @@ public final class ContractDecoder {
                 typeReference(Bool.class),
                 typeReference(Bool.class),
                 typeReference(Utf8String.class),
+                typeReference(Utf8String.class),
                 typeReference(Uint256.class)
         );
         List<Type> values = FunctionReturnDecoder.decode(encoded, outputTypes);
-        if (values.size() != 4) {
+        if (values.size() != 5) {
             throw new IllegalArgumentException("Invalid getRecord response");
         }
         return new VideoRecord(
                 (Boolean) values.get(0).getValue(),
                 (Boolean) values.get(1).getValue(),
                 (String) values.get(2).getValue(),
-                (BigInteger) values.get(3).getValue()
+                (String) values.get(3).getValue(),
+                (BigInteger) values.get(4).getValue()
         );
     }
 
@@ -43,7 +45,7 @@ public final class ContractDecoder {
         return (TypeReference) TypeReference.create(type);
     }
 
-    public record VideoRecord(boolean registered, boolean active, String issuerDid,
+    public record VideoRecord(boolean registered, boolean active, String issuerDid, String signature,
                               BigInteger registeredAt) {
     }
 }

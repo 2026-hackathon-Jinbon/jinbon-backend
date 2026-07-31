@@ -10,6 +10,11 @@ public record CompleteVideoVcRequest(
                 requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank
         @Size(max = 500, message = "vcId must be 500 characters or less")
-        String vcId
+        String vcId,
+        @Schema(description = "영상 등록 응답에서 받은 발급 Offer ID",
+                example = "offer-abc123", requiredMode = Schema.RequiredMode.REQUIRED)
+        @NotBlank
+        @Size(max = 500, message = "offerId must be 500 characters or less")
+        String offerId
 ) {
 }

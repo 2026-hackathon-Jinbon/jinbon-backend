@@ -103,22 +103,25 @@ public class VideoRegisterService {
         String signature = signatureService.sign(issuerDid + merkleRoot);
         log.debug("Merkle tree built - merkleRoot={}, signature generated", merkleRoot.substring(0, 16) + "...");
 
-        // 블록체인 기록
-        String txHash = sendBlockchainTx(ContractEncoder.encodeRegister(merkleRoot, issuerDid, signature));
-        String blockNumber = fetchBlockNumber(txHash);
-        log.info("Blockchain recorded - txHash={}, blockNumber={}", txHash, blockNumber);
-
-        // DB 저장 (fineHash unique 제약 위반 시 동시 요청에 의한 중복으로 처리)
+        // 먼저 DB unique 제약을 flush하여 이 요청이 fineHash 등록 권한을 예약한다.
+        // 동시 중복 요청이 블록체인 트랜잭션까지 보내는 것을 방지한다.
         Video video = Video.create(title, issuerDid, memberId, perceptualHash, fineHash,
-                merkleRoot, merklePath, blockNumber, txHash, signature, 1);
+                merkleRoot, merklePath, null, null, signature, 1);
 
         Video saved;
         try {
-            saved = videoRepository.save(video);
+            saved = videoRepository.saveAndFlush(video);
         } catch (DataIntegrityViolationException e) {
             log.warn("Concurrent duplicate registration detected - fineHash={}", fineHash.substring(0, 16) + "...");
             throw new BusinessException(ErrorCode.VIDEO_ALREADY_REGISTERED);
         }
+
+        // DB 예약에 성공한 단일 요청만 블록체인 기록을 수행한다.
+        String txHash = sendBlockchainTx(ContractEncoder.encodeRegister(merkleRoot, issuerDid, signature));
+        String blockNumber = fetchBlockNumber(txHash);
+        saved.recordBlockchain(blockNumber, txHash);
+        log.info("Blockchain recorded - txHash={}, blockNumber={}", txHash, blockNumber);
+
         VcIssuancePreparation preparation = prepareVcIssuance(saved);
 
         log.info("Video registration completed - videoId={}, txHash={}, blockNumber={}, vcId={}, issuerDid={}",
@@ -165,19 +168,51 @@ public class VideoRegisterService {
 
         // DB 비활성화 + 검증 캐시 제거
         video.deactivate();
-        videoVerifyService.evictCache(video.getFineHash());
+        videoVerifyService.evictCache(video);
 
         log.info("Video deactivation completed - videoId={}", videoId);
     }
 
     @Transactional
-    public void completeVcIssuance(Long videoId, Long memberId, String vcId) {
+    public void completeVcIssuance(Long videoId, Long memberId, String vcId, String offerId) {
+        if (!openDidProperties.isEnabled()) {
+            throw new BusinessException(ErrorCode.VC_FEATURE_DISABLED);
+        }
         Video video = findOwnedVideo(videoId, memberId);
+        if (video.getVcOfferId() == null || !video.getVcOfferId().equals(offerId)) {
+            throw new BusinessException(ErrorCode.VC_ISSUANCE_CONTEXT_MISMATCH);
+        }
         if (!vcVerificationService.verify(vcId)) {
             throw new BusinessException(ErrorCode.VC_VERIFICATION_FAILED);
         }
-        video.completeVcIssuance(vcId);
+        video.completeVcIssuance(vcId, offerId);
         log.info("Wallet VC issuance confirmed - videoId={}, memberId={}, vcId={}", videoId, memberId, vcId);
+    }
+
+    /**
+     * 이미 등록된 영상의 Wallet VC 발급 문맥을 반환하거나 새로 준비한다.
+     * 앱이 "나중에 발급"을 선택했거나 발급 도중 종료된 경우 영상 재업로드 없이 호출한다.
+     */
+    @Transactional
+    public VideoRegisterResponse prepareVcIssuance(Long videoId, Long memberId) {
+        if (!openDidProperties.isEnabled()) {
+            throw new BusinessException(ErrorCode.VC_FEATURE_DISABLED);
+        }
+        Video video = findOwnedVideo(videoId, memberId);
+        if (video.getVcId() != null) {
+            return toRegisterResponse(video, true, null);
+        }
+        if (video.getVcOfferId() != null
+                && video.getVcPlanId() != null
+                && video.getVcIssuerDid() != null) {
+            return VideoRegisterResponse.from(
+                    video, true, video.getVcPlanId(), video.getVcIssuerDid(), video.getVcOfferId());
+        }
+        VcIssuancePreparation preparation = prepareVcIssuance(video);
+        if (preparation == null) {
+            throw new BusinessException(ErrorCode.VC_ISSUANCE_FAILED);
+        }
+        return toRegisterResponse(video, true, preparation);
     }
 
     private Member findMemberById(Long memberId) {
@@ -278,7 +313,7 @@ public class VideoRegisterService {
                     )
             );
             if (preparation != null) {
-                video.markVcPending();
+                video.markVcPending(preparation.offerId(), preparation.vcPlanId(), preparation.issuerDid());
             }
             return preparation;
         } catch (Exception e) {

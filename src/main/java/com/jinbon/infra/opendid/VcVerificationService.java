@@ -17,6 +17,9 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class VcVerificationService {
+    public enum VerificationStatus {
+        VERIFIED, INVALID, UNAVAILABLE, DISABLED
+    }
 
     private static final String STATUS_ACTIVE = "ACTIVE";
     private static final String RESULT_VALID = "VALID";
@@ -32,9 +35,13 @@ public class VcVerificationService {
      * @return 검증 통과 여부
      */
     public boolean verify(String vcId) {
+        return verifyStatus(vcId) == VerificationStatus.VERIFIED;
+    }
+
+    public VerificationStatus verifyStatus(String vcId) {
         if (!openDidProperties.isEnabled()) {
-            log.info("Open DID is disabled, skipping VC verification - vcId={}", vcId);
-            return true;
+            log.info("Open DID is disabled, VC cannot be verified - vcId={}", vcId);
+            return VerificationStatus.DISABLED;
         }
 
         log.info("Starting VC verification - vcId={}", vcId);
@@ -46,7 +53,7 @@ public class VcVerificationService {
 
             if (!STATUS_ACTIVE.equalsIgnoreCase(status)) {
                 log.warn("VC is not active - vcId={}, status={}", vcId, status);
-                return false;
+                return VerificationStatus.INVALID;
             }
 
             // 2. VC 서명 무결성 검증
@@ -55,15 +62,15 @@ public class VcVerificationService {
 
             if (!RESULT_VALID.equalsIgnoreCase(result)) {
                 log.warn("VC integrity verification failed - vcId={}, result={}", vcId, result);
-                return false;
+                return VerificationStatus.INVALID;
             }
 
             log.info("VC verification passed - vcId={}", vcId);
-            return true;
+            return VerificationStatus.VERIFIED;
 
         } catch (Exception e) {
             log.warn("VC verification failed - vcId={}, reason={}", vcId, e.getMessage());
-            return false;
+            return VerificationStatus.UNAVAILABLE;
         }
     }
 }

@@ -55,7 +55,9 @@ public enum ErrorCode {
     VC_ISSUANCE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "D001", "Failed to issue verifiable credential."),
     VC_VERIFICATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "D002", "Failed to verify verifiable credential."),
     VC_REVOCATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "D003", "Failed to revoke verifiable credential."),
-    VC_ISSUANCE_NOT_PREPARED(HttpStatus.BAD_REQUEST, "D004", "VC issuance is not in PENDING_WALLET state.");
+    VC_ISSUANCE_NOT_PREPARED(HttpStatus.BAD_REQUEST, "D004", "VC issuance is not in PENDING_WALLET state."),
+    VC_ISSUANCE_CONTEXT_MISMATCH(HttpStatus.BAD_REQUEST, "D005", "VC offer does not match this video."),
+    VC_FEATURE_DISABLED(HttpStatus.SERVICE_UNAVAILABLE, "D006", "Open DID VC integration is disabled.");
 
     private final HttpStatus status;
     private final String code;

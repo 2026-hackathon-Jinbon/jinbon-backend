@@ -3,6 +3,7 @@ package com.jinbon.domain.video.service;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import com.jinbon.domain.video.dto.VideoVerifyResponse;
+import com.jinbon.domain.video.dto.VerificationVerdict;
 import com.jinbon.domain.video.entity.Video;
 import com.jinbon.domain.video.repository.VideoRepository;
 import com.jinbon.global.error.BusinessException;
@@ -12,6 +13,7 @@ import com.jinbon.infra.blockchain.ContractDecoder;
 import com.jinbon.infra.blockchain.OmniOneChainClient;
 import com.jinbon.infra.download.VideoDownloadService;
 import com.jinbon.infra.opendid.VcVerificationService;
+import com.jinbon.infra.opendid.VcVerificationService.VerificationStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -46,8 +48,12 @@ import java.util.Set;
 @Service
 @RequiredArgsConstructor
 public class VideoVerifyService {
+    private enum BlockchainStatus {
+        VERIFIED, INVALID, UNAVAILABLE
+    }
 
     private static final String VERIFY_CACHE_KEY_PREFIX = "verify:result:";
+    private static final String VIDEO_CACHE_INDEX_PREFIX = "verify:video:";
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
     private static final Set<String> ALLOWED_VIDEO_HOSTS = Set.of(
             "youtube.com", "youtu.be", "instagram.com", "tiktok.com",
@@ -88,7 +94,7 @@ public class VideoVerifyService {
         Video video = videoRepository.findByFineHash(fineHash).orElse(null);
         if (video != null) {
             log.info("Exact match found - videoId={}", video.getId());
-            VideoVerifyResponse result = buildVerifyResult(video);
+            VideoVerifyResponse result = buildVerifyResult(video, VerificationVerdict.EXACT_MATCH, null);
             cacheResult(fineHash, result);
             return result;
         }
@@ -108,7 +114,8 @@ public class VideoVerifyService {
         double distance = perceptualHashService.compareFingerprints(inputFingerprint, similarVideo.getPerceptualHash());
         log.info("Similar video found - videoId={}, hammingDistance={}", similarVideo.getId(), String.format("%.1f", distance));
 
-        VideoVerifyResponse result = buildVerifyResult(similarVideo);
+        VideoVerifyResponse result = buildVerifyResult(
+                similarVideo, VerificationVerdict.SIMILAR_MATCH, distance);
         cacheResult(fineHash, result);
         return result;
     }
@@ -146,7 +153,8 @@ public class VideoVerifyService {
             Video video = videoRepository.findByFineHash(fineHash).orElse(null);
             if (video != null) {
                 log.info("Exact match found from URL - videoId={}", video.getId());
-                VideoVerifyResponse result = buildVerifyResult(video);
+                VideoVerifyResponse result = buildVerifyResult(
+                        video, VerificationVerdict.EXACT_MATCH, null);
                 cacheResult(urlCacheKey, result);
                 return result;
             }
@@ -166,7 +174,8 @@ public class VideoVerifyService {
             log.info("Similar video found from URL - videoId={}, hammingDistance={}",
                     similarVideo.getId(), String.format("%.1f", distance));
 
-            VideoVerifyResponse result = buildVerifyResult(similarVideo);
+            VideoVerifyResponse result = buildVerifyResult(
+                    similarVideo, VerificationVerdict.SIMILAR_MATCH, distance);
             cacheResult(urlCacheKey, result);
             return result;
 
@@ -182,15 +191,25 @@ public class VideoVerifyService {
      * 특정 영상의 검증 캐시를 무효화한다.
      * 영상 비활성화 시 호출하여 이전 검증 결과가 반환되지 않도록 한다.
      */
-    public void evictCache(String fineHash) {
-        redisTemplate.delete(VERIFY_CACHE_KEY_PREFIX + fineHash);
-        log.debug("Verify cache evicted - fineHash={}", fineHash.substring(0, 16) + "...");
+    public void evictCache(Video video) {
+        String indexKey = VIDEO_CACHE_INDEX_PREFIX + video.getId();
+        Set<String> indexedKeys = redisTemplate.opsForSet().members(indexKey);
+        if (indexedKeys != null && !indexedKeys.isEmpty()) {
+            redisTemplate.delete(indexedKeys);
+        }
+        redisTemplate.delete(List.of(VERIFY_CACHE_KEY_PREFIX + video.getFineHash(), indexKey));
+        log.debug("Verify caches evicted - videoId={}, indexedKeyCount={}",
+                video.getId(), indexedKeys != null ? indexedKeys.size() : 0);
     }
 
     /**
      * 매칭된 영상에 대해 상태 확인 + 블록체인 검증을 수행하고 결과를 생성한다.
      */
-    private VideoVerifyResponse buildVerifyResult(Video video) {
+    private VideoVerifyResponse buildVerifyResult(
+            Video video,
+            VerificationVerdict matchedVerdict,
+            Double similarityDistance
+    ) {
         // 비활성화된 영상 확인
         if (!video.isActive()) {
             log.info("Video is deactivated - videoId={}", video.getId());
@@ -198,18 +217,39 @@ public class VideoVerifyService {
         }
 
         // 블록체인 검증
-        boolean blockchainVerified = verifyOnBlockchain(video);
+        BlockchainStatus blockchainStatus = verifyOnBlockchain(video);
+        boolean blockchainVerified = blockchainStatus == BlockchainStatus.VERIFIED;
 
         // VC 검증 — 상태(active) + 서명 무결성 확인
-        boolean vcVerified = verifyVc(video);
+        VerificationStatus vcStatus = verifyVc(video);
+        boolean vcVerified = vcStatus == VerificationStatus.VERIFIED;
 
-        boolean authentic = blockchainVerified;
+        boolean verificationUnavailable = blockchainStatus == BlockchainStatus.UNAVAILABLE
+                || vcStatus == VerificationStatus.UNAVAILABLE;
+        boolean authentic = blockchainVerified && !verificationUnavailable;
+        VerificationVerdict verdict = verificationUnavailable
+                ? VerificationVerdict.VERIFICATION_UNAVAILABLE : matchedVerdict;
+        String message;
+        String notice = null;
+        if (verificationUnavailable) {
+            message = "외부 검증 서비스에 연결할 수 없어 현재 진본 여부를 확인할 수 없습니다.";
+            notice = "잠시 후 다시 검증해 주세요.";
+        } else if (!blockchainVerified) {
+            verdict = VerificationVerdict.VERIFICATION_UNAVAILABLE;
+            message = "등록 기록은 찾았지만 블록체인 무결성 검증을 통과하지 못했습니다.";
+            notice = "운영자 확인이 필요합니다.";
+        } else if (matchedVerdict == VerificationVerdict.EXACT_MATCH) {
+            message = "등록된 원본 파일과 정확히 일치합니다.";
+        } else {
+            message = "등록 영상과 유사합니다. 재인코딩 또는 일부 변환되었을 수 있습니다.";
+            notice = "유사 일치는 원본 파일과 바이트 단위로 동일하다는 의미가 아닙니다.";
+        }
         log.info("Video verification completed - videoId={}, authentic={}, blockchainVerified={}, vcVerified={}",
                 video.getId(), authentic, blockchainVerified, vcVerified);
 
-        return new VideoVerifyResponse(authentic, video.getId(), video.getIssuerDid(),
-                video.getRegisteredAt(), blockchainVerified, vcVerified, true,
-                authentic ? "Video is authentic." : "Video matched, but blockchain verification failed.");
+        return new VideoVerifyResponse(verdict, similarityDistance, authentic,
+                video.getId(), video.getIssuerDid(), video.getRegisteredAt(),
+                blockchainVerified, vcVerified, true, message, notice);
     }
 
     /**
@@ -238,7 +278,7 @@ public class VideoVerifyService {
     /**
      * 블록체인에서 온체인 기록과 비교 검증한다.
      */
-    private boolean verifyOnBlockchain(Video video) {
+    private BlockchainStatus verifyOnBlockchain(Video video) {
         try {
             String callData = ContractEncoder.encodeGetRecord(video.getMerkleRoot());
             String result = omniOneChainClient.ethCall(callData);
@@ -248,21 +288,22 @@ public class VideoVerifyService {
                     || !video.getIssuerDid().equals(record.issuerDid())) {
                 log.warn("No blockchain record found - videoId={}, merkleRoot={}",
                         video.getId(), video.getMerkleRoot());
-                return false;
+                return BlockchainStatus.INVALID;
             }
 
             // 서명 재계산으로 무결성 확인
             String recalculatedSignature = signatureService.sign(video.getIssuerDid() + video.getMerkleRoot());
-            if (!recalculatedSignature.equals(video.getSignature())) {
+            if (!recalculatedSignature.equals(video.getSignature())
+                    || !recalculatedSignature.equals(record.signature())) {
                 log.warn("Signature mismatch - videoId={}", video.getId());
-                return false;
+                return BlockchainStatus.INVALID;
             }
 
             log.debug("Blockchain verification passed - videoId={}", video.getId());
-            return true;
+            return BlockchainStatus.VERIFIED;
         } catch (Exception e) {
             log.warn("Blockchain verification failed - videoId={}, reason={}", video.getId(), e.getMessage());
-            return false;
+            return BlockchainStatus.UNAVAILABLE;
         }
     }
 
@@ -270,12 +311,12 @@ public class VideoVerifyService {
      * VC의 상태(active/revoked/expired)와 서명 무결성을 검증한다.
      * vcId가 없는 경우(VC 미발급) false를 반환한다.
      */
-    private boolean verifyVc(Video video) {
+    private VerificationStatus verifyVc(Video video) {
         if (video.getVcId() == null) {
             log.debug("No VC issued for video - videoId={}", video.getId());
-            return false;
+            return VerificationStatus.DISABLED;
         }
-        return vcVerificationService.verify(video.getVcId());
+        return vcVerificationService.verifyStatus(video.getVcId());
     }
 
     private VideoVerifyResponse getCachedResult(String fineHash) {
@@ -284,7 +325,12 @@ public class VideoVerifyService {
             return null;
         }
         try {
-            return objectMapper.readValue(json, VideoVerifyResponse.class);
+            VideoVerifyResponse result = objectMapper.readValue(json, VideoVerifyResponse.class);
+            if (result.verdict() == null) {
+                redisTemplate.delete(VERIFY_CACHE_KEY_PREFIX + fineHash);
+                return null;
+            }
+            return result;
         } catch (JacksonException e) {
             log.warn("Failed to deserialize cached verify result, ignoring cache");
             return null;
@@ -292,9 +338,18 @@ public class VideoVerifyService {
     }
 
     private void cacheResult(String fineHash, VideoVerifyResponse result) {
+        if (result.verdict() == VerificationVerdict.VERIFICATION_UNAVAILABLE) {
+            return;
+        }
         try {
+            String resultKey = VERIFY_CACHE_KEY_PREFIX + fineHash;
             String json = objectMapper.writeValueAsString(result);
-            redisTemplate.opsForValue().set(VERIFY_CACHE_KEY_PREFIX + fineHash, json, CACHE_TTL);
+            redisTemplate.opsForValue().set(resultKey, json, CACHE_TTL);
+            if (result.videoId() != null) {
+                String indexKey = VIDEO_CACHE_INDEX_PREFIX + result.videoId();
+                redisTemplate.opsForSet().add(indexKey, resultKey);
+                redisTemplate.expire(indexKey, CACHE_TTL);
+            }
             log.debug("Verify result cached - fineHash={}, ttl={}min", fineHash.substring(0, 16) + "...", CACHE_TTL.toMinutes());
         } catch (JacksonException e) {
             log.warn("Failed to cache verify result");

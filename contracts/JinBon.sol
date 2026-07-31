@@ -6,6 +6,7 @@ pragma solidity ^0.8.20;
  * @notice Stores and manages video authenticity records on OmniOne Chain (BESU)
  */
 contract JinBon {
+    address public immutable owner;
 
     struct VideoRecord {
         string issuerDid;
@@ -15,7 +16,7 @@ contract JinBon {
         uint256 deactivatedAt;
     }
 
-    // merkleRoot => VideoRecord
+    // merkleRoot => VideoRecord밋
     mapping(string => VideoRecord) private records;
 
     // merkleRoot => exists
@@ -23,6 +24,15 @@ contract JinBon {
 
     event VideoRegistered(string indexed merkleRoot, string issuerDid, uint256 timestamp);
     event VideoDeactivated(string indexed merkleRoot, string issuerDid, uint256 timestamp);
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only owner");
+        _;
+    }
+
+    constructor() {
+        owner = msg.sender;
+    }
 
     /**
      * @notice Register a new video record
@@ -34,7 +44,7 @@ contract JinBon {
         string calldata merkleRoot,
         string calldata issuerDid,
         string calldata signature
-    ) external {
+    ) external onlyOwner {
         require(!registered[merkleRoot], "Already registered");
 
         records[merkleRoot] = VideoRecord({
@@ -57,7 +67,7 @@ contract JinBon {
     function deactivate(
         string calldata merkleRoot,
         string calldata issuerDid
-    ) external {
+    ) external onlyOwner {
         require(registered[merkleRoot], "Not registered");
         require(records[merkleRoot].active, "Already deactivated");
         require(
@@ -77,6 +87,7 @@ contract JinBon {
      * @return isRegistered Whether the video is registered
      * @return isActive Whether the video is active
      * @return issuerDid DID of the issuer
+     * @return signature Issuer signature stored at registration
      * @return registeredAt Registration timestamp
      */
     function getRecord(string calldata merkleRoot)
@@ -86,13 +97,14 @@ contract JinBon {
             bool isRegistered,
             bool isActive,
             string memory issuerDid,
+            string memory signature,
             uint256 registeredAt
         )
     {
         if (!registered[merkleRoot]) {
-            return (false, false, "", 0);
+            return (false, false, "", "", 0);
         }
         VideoRecord storage record = records[merkleRoot];
-        return (true, record.active, record.issuerDid, record.registeredAt);
+        return (true, record.active, record.issuerDid, record.signature, record.registeredAt);
     }
 }

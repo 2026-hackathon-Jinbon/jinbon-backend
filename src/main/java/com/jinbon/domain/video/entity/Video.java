@@ -75,6 +75,13 @@ public class Video {
     /** Verifiable Credential 식별자 (Open DID Issuer가 발급) */
     private String vcId;
 
+    /** 이 영상의 Wallet VC 발급 준비 과정에서 생성된 1회성 Offer ID */
+    private String vcOfferId;
+
+    /** 발급 준비 시 확정된 VC Plan과 Issuer */
+    private String vcPlanId;
+    private String vcIssuerDid;
+
     /** VC 발급 상태 (enum으로 관리하여 오타에 의한 버그 방지) */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -117,7 +124,10 @@ public class Video {
     }
 
     /** VC 발급 준비 상태로 전이한다 (NOT_REQUESTED → PENDING_WALLET) */
-    public void markVcPending() {
+    public void markVcPending(String offerId, String planId, String vcIssuerDid) {
+        this.vcOfferId = offerId;
+        this.vcPlanId = planId;
+        this.vcIssuerDid = vcIssuerDid;
         this.vcIssuanceStatus = VcIssuanceStatus.PENDING_WALLET;
     }
 
@@ -127,12 +137,21 @@ public class Video {
      *
      * @throws BusinessException PENDING_WALLET 상태가 아닌 경우
      */
-    public void completeVcIssuance(String vcId) {
+    public void completeVcIssuance(String vcId, String offerId) {
         if (this.vcIssuanceStatus != VcIssuanceStatus.PENDING_WALLET) {
             throw new BusinessException(ErrorCode.VC_ISSUANCE_NOT_PREPARED);
         }
+        if (this.vcOfferId == null || !this.vcOfferId.equals(offerId)) {
+            throw new BusinessException(ErrorCode.VC_ISSUANCE_CONTEXT_MISMATCH);
+        }
         this.vcId = vcId;
         this.vcIssuanceStatus = VcIssuanceStatus.ISSUED;
+    }
+
+    /** DB 중복 예약이 성공한 뒤 확정된 블록체인 기록을 연결한다. */
+    public void recordBlockchain(String blockNumber, String txHash) {
+        this.blockNumber = blockNumber;
+        this.txHash = txHash;
     }
 
     /** 영상을 비활성화한다 (검증 결과에서 '비활성화됨'으로 표시) */

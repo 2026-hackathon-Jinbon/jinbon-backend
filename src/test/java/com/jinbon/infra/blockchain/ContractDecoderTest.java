@@ -18,6 +18,7 @@ class ContractDecoderTest {
     void decodesRegisteredVideoRecord() {
         String encoded = FunctionEncoder.encodeConstructor(List.of(
                 new Bool(true), new Bool(true), new Utf8String("did:omn:issuer"),
+                new Utf8String("signature"),
                 new Uint256(BigInteger.valueOf(1234))));
 
         ContractDecoder.VideoRecord record = ContractDecoder.decodeGetRecord(encoded);
@@ -25,13 +26,15 @@ class ContractDecoderTest {
         assertThat(record.registered()).isTrue();
         assertThat(record.active()).isTrue();
         assertThat(record.issuerDid()).isEqualTo("did:omn:issuer");
+        assertThat(record.signature()).isEqualTo("signature");
         assertThat(record.registeredAt()).isEqualTo(BigInteger.valueOf(1234));
     }
 
     @Test
     void decodesSolidityDefaultRecordAsUnregistered() {
         String encoded = FunctionEncoder.encodeConstructor(List.of(
-                new Bool(false), new Bool(false), new Utf8String(""), new Uint256(BigInteger.ZERO)));
+                new Bool(false), new Bool(false), new Utf8String(""), new Utf8String(""),
+                new Uint256(BigInteger.ZERO)));
 
         assertThat(ContractDecoder.decodeGetRecord(encoded).registered()).isFalse();
     }
