@@ -114,8 +114,10 @@ public class VideoVerifyService {
         double distance = perceptualHashService.compareFingerprints(inputFingerprint, similarVideo.getPerceptualHash());
         log.info("Similar video found - videoId={}, hammingDistance={}", similarVideo.getId(), String.format("%.1f", distance));
 
-        VideoVerifyResponse result = buildVerifyResult(
-                similarVideo, VerificationVerdict.SIMILAR_MATCH, distance);
+        VerificationVerdict matchedVerdict = distance == 0.0
+                ? VerificationVerdict.SAME_CONTENT
+                : VerificationVerdict.SIMILAR_MATCH;
+        VideoVerifyResponse result = buildVerifyResult(similarVideo, matchedVerdict, distance);
         cacheResult(fineHash, result);
         return result;
     }
@@ -174,8 +176,10 @@ public class VideoVerifyService {
             log.info("Similar video found from URL - videoId={}, hammingDistance={}",
                     similarVideo.getId(), String.format("%.1f", distance));
 
-            VideoVerifyResponse result = buildVerifyResult(
-                    similarVideo, VerificationVerdict.SIMILAR_MATCH, distance);
+            VerificationVerdict matchedVerdict = distance == 0.0
+                    ? VerificationVerdict.SAME_CONTENT
+                    : VerificationVerdict.SIMILAR_MATCH;
+            VideoVerifyResponse result = buildVerifyResult(similarVideo, matchedVerdict, distance);
             cacheResult(urlCacheKey, result);
             return result;
 
@@ -240,6 +244,9 @@ public class VideoVerifyService {
             notice = "운영자 확인이 필요합니다.";
         } else if (matchedVerdict == VerificationVerdict.EXACT_MATCH) {
             message = "등록된 원본 파일과 정확히 일치합니다.";
+        } else if (matchedVerdict == VerificationVerdict.SAME_CONTENT) {
+            message = "등록된 영상과 동일한 콘텐츠로 판단됩니다.";
+            notice = "영상 프레임을 비교한 결과이며, 파일의 바이트가 동일하다는 의미는 아닙니다.";
         } else {
             message = "등록 영상과 유사합니다. 재인코딩 또는 일부 변환되었을 수 있습니다.";
             notice = "유사 일치는 원본 파일과 바이트 단위로 동일하다는 의미가 아닙니다.";

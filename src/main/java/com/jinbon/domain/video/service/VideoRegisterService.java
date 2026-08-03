@@ -97,6 +97,24 @@ public class VideoRegisterService {
         log.debug("Perceptual hash generated - fingerprint={}...",
                 perceptualHash.substring(0, Math.min(32, perceptualHash.length())));
 
+        // 컨테이너나 메타데이터가 달라 fineHash가 바뀌어도 영상 내용이 같으면 중복 등록으로 처리한다.
+        // 같은 회원의 재시도는 멱등 응답하고, 다른 회원의 등록은 소유 주체 충돌로 차단한다.
+        Video contentMatch = findSameContentVideo(perceptualHash);
+        if (contentMatch != null) {
+            boolean sameMember = memberId.equals(contentMatch.getMemberId())
+                    || (contentMatch.getMemberId() == null && issuerDid.equals(contentMatch.getIssuerDid()));
+            if (sameMember) {
+                log.info("Idempotent same-content registration - memberId={}, existingVideoId={}",
+                        memberId, contentMatch.getId());
+                VcIssuancePreparation preparation = contentMatch.getVcId() == null
+                        ? prepareVcIssuance(contentMatch) : null;
+                return toRegisterResponse(contentMatch, true, preparation);
+            }
+            log.warn("Same-content video owned by another member - requesterMemberId={}, existingVideoId={}",
+                    memberId, contentMatch.getId());
+            throw new BusinessException(ErrorCode.VIDEO_ALREADY_REGISTERED);
+        }
+
         // 머클트리 구성 + 전자서명
         String merkleRoot = hashService.buildMerkleRoot(perceptualHash, fineHash);
         String merklePath = hashService.buildMerklePath(perceptualHash, fineHash, merkleRoot);
@@ -265,6 +283,23 @@ public class VideoRegisterService {
             log.error("Failed to generate perceptual hash - fileName={}", file.getOriginalFilename(), e);
             throw new BusinessException(ErrorCode.VIDEO_PROCESSING_FAILED);
         }
+    }
+
+    /** 프레임 지각해시가 모두 일치하는 기존 영상을 찾는다. */
+    private Video findSameContentVideo(String perceptualHash) {
+        for (Video video : videoRepository.findAll()) {
+            if (video.getPerceptualHash() == null) {
+                continue;
+            }
+            double forwardDistance = perceptualHashService.compareFingerprints(
+                    perceptualHash, video.getPerceptualHash());
+            double reverseDistance = perceptualHashService.compareFingerprints(
+                    video.getPerceptualHash(), perceptualHash);
+            if (forwardDistance == 0.0 && reverseDistance == 0.0) {
+                return video;
+            }
+        }
+        return null;
     }
 
     /** 블록체인 트랜잭션을 전송하고 txHash를 반환한다 (실패 시 예외) */

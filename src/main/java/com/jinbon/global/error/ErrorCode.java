@@ -40,7 +40,7 @@ public enum ErrorCode {
     ISSUER_ROLE_REQUIRED(HttpStatus.FORBIDDEN, "V001", "Only ISSUER role can register videos."),
     ISSUER_DID_NOT_REGISTERED(HttpStatus.BAD_REQUEST, "V002", "Issuer DID is not registered."),
     VIDEO_PROCESSING_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "V003", "Failed to process video file."),
-    VIDEO_ALREADY_REGISTERED(HttpStatus.CONFLICT, "V004", "The same video is registered by another account. Registration authority must be verified."),
+    VIDEO_ALREADY_REGISTERED(HttpStatus.CONFLICT, "V004", "동일한 영상이 다른 계정에 이미 등록되어 있습니다."),
     VIDEO_NOT_FOUND(HttpStatus.NOT_FOUND, "V005", "Video not found."),
     VIDEO_NOT_OWNED(HttpStatus.FORBIDDEN, "V006", "Not the owner of this video."),
     VIDEO_ALREADY_DEACTIVATED(HttpStatus.BAD_REQUEST, "V007", "Video is already deactivated."),
