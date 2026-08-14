@@ -9,6 +9,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "blockchain")
 public class BlockchainProperties {
 
+    private final String network;
+    private final String chainId;
     private final String rpcUrl;
     private final String contractAddress;
     private final String walletAddress;

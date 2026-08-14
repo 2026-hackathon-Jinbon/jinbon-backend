@@ -26,9 +26,10 @@ import org.springframework.web.multipart.MultipartFile;
         3. 머클트리 생성 → merkleRoot 계산
         4. 전자서명 생성 → 블록체인 기록
         5. DB 저장
-        6. Open DID Issuer에 Holder DID와 영상 Claim 등록 및 Offer 생성
-        7. Wallet 발급에 필요한 vcPlanId, vcIssuerDid, vcOfferId 반환
-        8. 앱 Wallet에서 VC 수령 후 발급 완료 API 호출
+        6. 확정된 온체인 기록을 재검증
+        7. Open DID Issuer에 Holder DID와 온체인 등록 보증 Claim 등록 및 Offer 생성
+        8. Wallet 발급에 필요한 vcPlanId, vcIssuerDid, vcOfferId 반환
+        9. 앱 Wallet에서 VC 수령 후 발급 완료 API 호출
         ```
 
         ## 비활성화

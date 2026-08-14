@@ -51,8 +51,10 @@
   │
   ├─ 7. DB 저장 (영상정보, 해시, Merkle Path, txHash)
   │
-  └─ 8. [선택과제 1] Open DID VC 발급 준비
-        → 서버가 Holder DID와 영상 Claim을 Issuer에 등록하고 발급 Offer 생성
+  └─ 8. [선택과제 1] Open DID VC 보증서 발급 준비
+        → 서버가 온체인 등록을 재확인
+        → Holder DID와 Merkle Root, 체인·컨트랙트·트랜잭션 증거를 Issuer에 등록
+        → 진본 Issuer가 "블록체인 등록 사실"을 보증하는 발급 Offer 생성
         → 앱이 Wallet 프로토콜로 사용자 동의·PIN 인증 후 VC 수령 및 저장
         → 발급 완료 API로 vcId를 서버 영상 정보에 연결
 ```
@@ -109,8 +111,8 @@ CI 원문은 저장하지 않습니다. 인증 직후 서버 전용 비밀키로
 
 | 항목 | 내용 |
 |------|------|
-| 용도 | 영상 진본 인증서(VC) 발급 및 검증 |
-| 역할 | **"누가, 언제, 이 영상을 등록했는가"** 에 대한 신뢰성 증명 |
+| 용도 | 영상 블록체인 등록 보증서(VC) 발급 및 검증 |
+| 역할 | **진본 Issuer가 "누가, 언제, 어떤 온체인 기록으로 이 영상을 등록했는가"를 확인했다는 증명** |
 | 구성 | Open DID Orchestrator로 TAS, Issuer, Verifier, CA, Wallet, API 서버 일괄 관리 |
 | 블록체인 | Hyperledger Besu (로컬 Docker) — DID Document 앵커링용 |
 | VC 발급 흐름 | 백엔드가 Holder/Claim 등록 및 발급 Offer 생성 → 앱 Wallet이 offerId로 사용자 동의·PIN 인증 → issue-vc → confirm → 로컬 저장 → 백엔드에 vcId 연결 |

@@ -4,12 +4,13 @@ import io.swagger.v3.oas.annotations.media.Schema;
 
 @Schema(description = "영상 검증 판정",
         allowableValues = {"EXACT_MATCH", "SAME_CONTENT", "SIMILAR_MATCH", "REGISTERED_BUT_REVOKED",
-                "NOT_REGISTERED", "VERIFICATION_UNAVAILABLE"})
+                "CERTIFICATE_INVALID", "NOT_REGISTERED", "VERIFICATION_UNAVAILABLE"})
 public enum VerificationVerdict {
     EXACT_MATCH,
     SAME_CONTENT,
     SIMILAR_MATCH,
     REGISTERED_BUT_REVOKED,
+    CERTIFICATE_INVALID,
     NOT_REGISTERED,
     VERIFICATION_UNAVAILABLE
 }

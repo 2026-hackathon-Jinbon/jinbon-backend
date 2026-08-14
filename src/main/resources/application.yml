@@ -43,6 +43,8 @@ omnione:
 
 # OmniOne Chain (선택과제 2 - BESU)
 blockchain:
+  network: ${BLOCKCHAIN_NETWORK:omnione}
+  chain-id: ${BLOCKCHAIN_CHAIN_ID:}
   rpc-url: ${BLOCKCHAIN_RPC_URL:}
   contract-address: ${CONTRACT_ADDRESS:}
   wallet-address: ${WALLET_ADDRESS:}

@@ -13,6 +13,8 @@ public record VideoDetailResponse(
         @Schema(description = "블록체인 트랜잭션 해시") String txHash,
         @Schema(description = "블록 번호") String blockNumber,
         @Schema(description = "Open DID VC ID. 미발급 상태이면 null", nullable = true) String vcId,
+        @Schema(description = "VC 발급기관 DID. 영상 등록자 DID와 다름", nullable = true) String vcIssuerDid,
+        @Schema(description = "VC 보증 범위", nullable = true) String vcAssuranceType,
         @Schema(description = "VC 발급 상태", allowableValues = {"NOT_REQUESTED", "PENDING_WALLET", "ISSUED"}) String vcIssuanceStatus,
         @Schema(description = "활성 상태") boolean active,
         @Schema(description = "등록 시각") LocalDateTime registeredAt,
@@ -22,6 +24,7 @@ public record VideoDetailResponse(
         return new VideoDetailResponse(
                 video.getId(), video.getTitle(), video.getMerkleRoot(),
                 video.getTxHash(), video.getBlockNumber(), video.getVcId(),
+                video.getVcIssuerDid(), video.getVcAssuranceType(),
                 video.getVcIssuanceStatus() != null ? video.getVcIssuanceStatus().name() : null,
                 video.isActive(), video.getRegisteredAt(), video.getDeactivatedAt()
         );

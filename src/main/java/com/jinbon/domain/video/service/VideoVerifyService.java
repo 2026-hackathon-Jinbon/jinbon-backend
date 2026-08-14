@@ -228,9 +228,11 @@ public class VideoVerifyService {
         VerificationStatus vcStatus = verifyVc(video);
         boolean vcVerified = vcStatus == VerificationStatus.VERIFIED;
 
+        boolean certificateIssued = video.getVcId() != null;
         boolean verificationUnavailable = blockchainStatus == BlockchainStatus.UNAVAILABLE
-                || vcStatus == VerificationStatus.UNAVAILABLE;
-        boolean authentic = blockchainVerified && !verificationUnavailable;
+                || (certificateIssued && vcStatus == VerificationStatus.UNAVAILABLE);
+        boolean certificateInvalid = certificateIssued && vcStatus == VerificationStatus.INVALID;
+        boolean authentic = blockchainVerified && !verificationUnavailable && !certificateInvalid;
         VerificationVerdict verdict = verificationUnavailable
                 ? VerificationVerdict.VERIFICATION_UNAVAILABLE : matchedVerdict;
         String message;
@@ -242,6 +244,10 @@ public class VideoVerifyService {
             verdict = VerificationVerdict.VERIFICATION_UNAVAILABLE;
             message = "등록 기록은 찾았지만 블록체인 무결성 검증을 통과하지 못했습니다.";
             notice = "운영자 확인이 필요합니다.";
+        } else if (certificateInvalid) {
+            verdict = VerificationVerdict.CERTIFICATE_INVALID;
+            message = "영상의 블록체인 등록 기록은 확인했지만 VC 보증서가 유효하지 않습니다.";
+            notice = "보증서가 폐기·만료되었거나 서명 검증을 통과하지 못했습니다.";
         } else if (matchedVerdict == VerificationVerdict.EXACT_MATCH) {
             message = "등록된 원본 파일과 정확히 일치합니다.";
         } else if (matchedVerdict == VerificationVerdict.SAME_CONTENT) {

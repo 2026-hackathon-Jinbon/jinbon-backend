@@ -11,7 +11,7 @@ public record VideoVerifyResponse(
         Double similarityDistance,
         @Schema(description = "진본 여부", example = "true") boolean authentic,
         @Schema(description = "영상 ID (미등록 시 null)", example = "1") Long videoId,
-        @Schema(description = "등록 발급자 DID (미등록 시 null)") String issuerDid,
+        @Schema(description = "영상 등록자 DID (레거시 필드명 issuerDid, 미등록 시 null)") String issuerDid,
         @Schema(description = "등록 시각 (미등록 시 null)") LocalDateTime registeredAt,
         @Schema(description = "블록체인 검증 성공 여부") boolean blockchainVerified,
         @Schema(description = "VC 검증 성공 여부") boolean vcVerified,

@@ -11,6 +11,7 @@ import com.jinbon.global.error.BusinessException;
 import com.jinbon.global.error.ErrorCode;
 import com.jinbon.global.config.OpenDidProperties;
 import com.jinbon.infra.blockchain.ContractEncoder;
+import com.jinbon.infra.blockchain.ContractDecoder;
 import com.jinbon.infra.blockchain.OmniOneChainClient;
 import com.jinbon.infra.opendid.VcIssuanceService;
 import com.jinbon.infra.opendid.VcIssuanceService.VcIssuancePreparation;
@@ -51,6 +52,7 @@ public class VideoRegisterService {
     private final SignatureService signatureService;
     private final OmniOneChainClient omniOneChainClient;
     private final VcIssuanceService vcIssuanceService;
+    private final VideoCertificateClaims videoCertificateClaims;
     private final com.jinbon.infra.opendid.VcVerificationService vcVerificationService;
     private final OpenDidProperties openDidProperties;
     private final VideoVerifyService videoVerifyService;
@@ -338,23 +340,36 @@ public class VideoRegisterService {
 
     private VcIssuancePreparation prepareVcIssuance(Video video) {
         try {
+            verifyBlockchainEvidence(video);
+            VideoCertificateClaims.Draft certificate = videoCertificateClaims.create(video);
             VcIssuancePreparation preparation = vcIssuanceService.prepareVideoVc(
                     video.getIssuerDid(),
-                    Map.of(
-                            openDidProperties.claimKey("videoHash"), video.getFineHash(),
-                            openDidProperties.claimKey("uploaderDid"), video.getIssuerDid(),
-                            openDidProperties.claimKey("uploadTimestamp"), video.getRegisteredAt().toString(),
-                            openDidProperties.claimKey("videoTitle"), video.getTitle()
-                    )
+                    certificate.claims()
             );
             if (preparation != null) {
-                video.markVcPending(preparation.offerId(), preparation.vcPlanId(), preparation.issuerDid());
+                video.markVcPending(
+                        preparation.offerId(), preparation.vcPlanId(), preparation.issuerDid(),
+                        certificate.snapshotHash(preparation.issuerDid()),
+                        VideoCertificateClaims.SCHEMA_VERSION,
+                        VideoCertificateClaims.ASSURANCE_TYPE);
             }
             return preparation;
         } catch (Exception e) {
             log.warn("VC preparation failed, video remains registered - videoId={}, reason={}",
                     video.getId(), e.getMessage());
             return null;
+        }
+    }
+
+    /** VC에는 receipt뿐 아니라 현재 온체인 레코드와 일치하는 확정 증거만 담는다. */
+    private void verifyBlockchainEvidence(Video video) {
+        String result = omniOneChainClient.ethCall(
+                ContractEncoder.encodeGetRecord(video.getMerkleRoot()));
+        ContractDecoder.VideoRecord record = ContractDecoder.decodeGetRecord(result);
+        if (!record.registered() || !record.active()
+                || !video.getIssuerDid().equals(record.issuerDid())
+                || !video.getSignature().equals(record.signature())) {
+            throw new IllegalStateException("Blockchain evidence does not match the video registration");
         }
     }
 

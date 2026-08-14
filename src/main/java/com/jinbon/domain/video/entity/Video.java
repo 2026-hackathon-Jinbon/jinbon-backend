@@ -82,6 +82,13 @@ public class Video {
     private String vcPlanId;
     private String vcIssuerDid;
 
+    /** 발급 준비 당시 온체인 보증서 핵심 클레임의 SHA-256 결속값 */
+    private String vcClaimSnapshotHash;
+
+    /** 영상 등록 보증서 스키마 버전과 보증 범위 */
+    private Integer vcSchemaVersion;
+    private String vcAssuranceType;
+
     /** VC 발급 상태 (enum으로 관리하여 오타에 의한 버그 방지) */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -124,11 +131,21 @@ public class Video {
     }
 
     /** VC 발급 준비 상태로 전이한다 (NOT_REQUESTED → PENDING_WALLET) */
-    public void markVcPending(String offerId, String planId, String vcIssuerDid) {
+    public void markVcPending(String offerId, String planId, String vcIssuerDid,
+                              String claimSnapshotHash, Integer schemaVersion,
+                              String assuranceType) {
         this.vcOfferId = offerId;
         this.vcPlanId = planId;
         this.vcIssuerDid = vcIssuerDid;
+        this.vcClaimSnapshotHash = claimSnapshotHash;
+        this.vcSchemaVersion = schemaVersion;
+        this.vcAssuranceType = assuranceType;
         this.vcIssuanceStatus = VcIssuanceStatus.PENDING_WALLET;
+    }
+
+    /** 기존 호출부 호환용. 신규 영상 보증서 발급은 메타데이터를 포함한 오버로드를 사용한다. */
+    public void markVcPending(String offerId, String planId, String vcIssuerDid) {
+        markVcPending(offerId, planId, vcIssuerDid, null, null, null);
     }
 
     /**
