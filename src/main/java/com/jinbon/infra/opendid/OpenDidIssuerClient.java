@@ -8,10 +8,6 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 import java.util.UUID;
 import java.util.List;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -99,7 +95,24 @@ public class OpenDidIssuerClient {
         return result;
     }
 
-    public void prepareHolder(String holderDid, Map<String, Object> claims) {
+    /** Issuer 발급 원장에서 VC의 현재 상태를 조회한다. */
+    public String getIssuedVcStatus(String vcId) {
+        log.debug("Querying issued VC status - vcId={}", vcId);
+        Map<String, Object> result = api.searchIssuedVcs("vcId", vcId, 1);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> content = (List<Map<String, Object>>) result.get("content");
+        if (content == null || content.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> issuedVc = content.getFirst();
+        if (!vcId.equals(String.valueOf(issuedVc.get("vcId")))) {
+            return null;
+        }
+        Object status = issuedVc.get("status");
+        return status != null ? status.toString() : null;
+    }
+
+    public void prepareHolder(String holderDid, String pii, Map<String, Object> claims) {
         // Issuer 2.0.0은 vcPlanId 검색 필터가 일치하는 Plan도 빈 목록으로 반환할 수 있어
         // 전체 목록에서 정확한 Plan ID를 직접 찾는다.
         Map<String, Object> profiles = api.listIssueProfiles(100);
@@ -115,7 +128,6 @@ public class OpenDidIssuerClient {
         String vcSchemaId = profile.get("vcSchemaId").toString();
         try {
             String userInfo = objectMapper.writeValueAsString(claims);
-            String pii = createPii(holderDid);
             Map<String, Object> holders = api.searchHolders("did", holderDid, 1);
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> registered = (List<Map<String, Object>>) holders.get("content");
@@ -162,16 +174,6 @@ public class OpenDidIssuerClient {
     }
 
     public record IssueOffer(String offerId, String issuerDid) {}
-
-    private String createPii(String holderDid) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(holderDid.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is not available", e);
-        }
-    }
 
     public String getIssuerDid() {
         Object did = api.getIssuerInfo().get("did");

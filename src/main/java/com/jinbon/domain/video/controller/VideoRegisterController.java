@@ -90,4 +90,15 @@ public class VideoRegisterController implements VideoRegisterApi {
         return ResponseEntity.ok(CommonResponse.success(
                 videoRegisterService.prepareVcIssuance(videoId, memberId)));
     }
+
+    @PutMapping("/{videoId}/vc/holder")
+    @Override
+    public ResponseEntity<CommonResponse<Void>> syncVcHolder(
+            @PathVariable Long videoId,
+            Authentication authentication
+    ) {
+        Long memberId = Long.parseLong(authentication.getName());
+        videoRegisterService.syncVcHolder(videoId, memberId);
+        return ResponseEntity.ok(CommonResponse.success(null));
+    }
 }

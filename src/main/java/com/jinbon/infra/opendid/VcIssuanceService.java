@@ -21,16 +21,24 @@ import java.util.Map;
 public class VcIssuanceService {
 
     private final OpenDidIssuerClient issuerClient;
+    private final OpenDidTasClient tasClient;
     private final OpenDidProperties openDidProperties;
 
     public VcIssuancePreparation prepareVideoVc(String holderDid, Map<String, Object> claims) {
         if (!openDidProperties.isEnabled()) {
             return null;
         }
-        issuerClient.prepareHolder(holderDid, claims);
+        issuerClient.prepareHolder(holderDid, tasClient.getHolderPii(holderDid), claims);
         OpenDidIssuerClient.IssueOffer offer = issuerClient.createIssueOffer();
         return new VcIssuancePreparation(
                 openDidProperties.getVcPlanId(), offer.issuerDid(), offer.offerId());
+    }
+
+    public void syncHolderPii(String holderDid, Map<String, Object> claims) {
+        if (!openDidProperties.isEnabled()) {
+            return;
+        }
+        issuerClient.prepareHolder(holderDid, tasClient.getHolderPii(holderDid), claims);
     }
 
     public record VcIssuancePreparation(String vcPlanId, String issuerDid, String offerId) {}

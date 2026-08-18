@@ -2,6 +2,7 @@ package com.jinbon.global.config;
 
 import com.jinbon.infra.omnione.OmniOneCxApi;
 import com.jinbon.infra.opendid.OpenDidIssuerApi;
+import com.jinbon.infra.opendid.OpenDidTasAdminApi;
 import com.jinbon.infra.opendid.OpenDidVerifierApi;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -31,6 +32,12 @@ public class HttpClientConfig {
     OpenDidIssuerApi openDidIssuerApi(OpenDidProperties properties) {
         RestClient restClient = RestClient.builder().baseUrl(properties.getIssuerServerUrl()).build();
         return createProxy(restClient, OpenDidIssuerApi.class);
+    }
+
+    @Bean
+    OpenDidTasAdminApi openDidTasAdminApi(@Value("${opendid.tas-server-url:http://localhost:8090}") String serverUrl) {
+        RestClient restClient = RestClient.builder().baseUrl(serverUrl).build();
+        return createProxy(restClient, OpenDidTasAdminApi.class);
     }
 
     /** Open DID Verifier Server API 클라이언트 */

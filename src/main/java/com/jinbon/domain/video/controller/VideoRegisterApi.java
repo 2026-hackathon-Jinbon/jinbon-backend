@@ -103,6 +103,14 @@ public interface VideoRegisterApi {
             @Parameter(description = "영상 ID", required = true) Long videoId,
             @Parameter(hidden = true) Authentication authentication);
 
+    @Operation(summary = "Wallet VC Holder PII 동기화", description = """
+            issuer_init 발급 프로필 조회 전에 TAS 사용자 DB의 PII를 Issuer Holder에 동기화합니다.
+            PII는 진본 DB에 저장하지 않으며 본인이 등록한 영상에 대해서만 호출할 수 있습니다.
+            """)
+    ResponseEntity<CommonResponse<Void>> syncVcHolder(
+            @Parameter(description = "영상 ID", required = true) Long videoId,
+            @Parameter(hidden = true) Authentication authentication);
+
     @Operation(summary = "영상 비활성화", description = "등록된 영상을 비활성화합니다. 블록체인에도 비활성화 트랜잭션이 기록됩니다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "비활성화 성공"),

@@ -202,6 +202,10 @@ public class VideoRegisterService {
         if (video.getVcOfferId() == null || !video.getVcOfferId().equals(offerId)) {
             throw new BusinessException(ErrorCode.VC_ISSUANCE_CONTEXT_MISMATCH);
         }
+        verifyBlockchainEvidence(video);
+        if (!videoCertificateClaims.matchesSnapshot(video)) {
+            throw new BusinessException(ErrorCode.VC_ISSUANCE_CONTEXT_MISMATCH);
+        }
         if (!vcVerificationService.verify(vcId)) {
             throw new BusinessException(ErrorCode.VC_VERIFICATION_FAILED);
         }
@@ -233,6 +237,23 @@ public class VideoRegisterService {
             throw new BusinessException(ErrorCode.VC_ISSUANCE_FAILED);
         }
         return toRegisterResponse(video, true, preparation);
+    }
+
+    /** issuer_init 발급에서 Wallet과 Issuer가 동일한 Holder PII를 사용하도록 동기화한다. */
+    @Transactional(readOnly = true)
+    public void syncVcHolder(Long videoId, Long memberId) {
+        if (!openDidProperties.isEnabled()) {
+            throw new BusinessException(ErrorCode.VC_FEATURE_DISABLED);
+        }
+        Member member = findMemberById(memberId);
+        Video video = findOwnedVideo(videoId, memberId);
+        if (member.getUserDid() == null || !member.getUserDid().equals(video.getIssuerDid())) {
+            throw new BusinessException(ErrorCode.VC_ISSUANCE_CONTEXT_MISMATCH);
+        }
+        VideoCertificateClaims.Draft certificate = videoCertificateClaims.create(video);
+        vcIssuanceService.syncHolderPii(video.getIssuerDid(), certificate.claims());
+        log.info("Issuer holder PII synchronized - videoId={}, memberId={}, holderDid={}",
+                videoId, memberId, video.getIssuerDid());
     }
 
     private Member findMemberById(Long memberId) {

@@ -38,6 +38,11 @@ public interface OpenDidIssuerApi {
     @GetExchange("/issuer/admin/v1/issue-profiles")
     Map<String, Object> listIssueProfiles(@RequestParam("size") int size);
 
+    @GetExchange("/issuer/admin/v1/issued-vcs")
+    Map<String, Object> searchIssuedVcs(@RequestParam("searchKey") String searchKey,
+                                        @RequestParam("searchValue") String searchValue,
+                                        @RequestParam("size") int size);
+
     @PostExchange("/issuer/admin/v1/users/demo")
     void registerHolder(@RequestBody Map<String, Object> body);
 

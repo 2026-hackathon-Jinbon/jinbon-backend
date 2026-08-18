@@ -11,6 +11,8 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.parameters.RequestBody;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
@@ -43,7 +45,7 @@ public interface AuthApi {
                     """
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "토큰 발급 성공")
+            @ApiResponse(responseCode = "200", description = "토큰 발급 성공")
     })
     ResponseEntity<CommonResponse<OacxTokenResponse>> createToken();
 
@@ -61,7 +63,7 @@ public interface AuthApi {
                     """
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "딥링크 생성 성공")
+            @ApiResponse(responseCode = "200", description = "딥링크 생성 성공")
     })
     ResponseEntity<CommonResponse<OacxAppResponse>> requestApp(
             @Parameter(description = "인증사 코드 (모바일 운전면허증: comdl)", example = "comdl", required = true)
@@ -89,10 +91,10 @@ public interface AuthApi {
                     """
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "인증 성공, JWT 발급"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "신분증 검증 실패")
+            @ApiResponse(responseCode = "200", description = "인증 성공, JWT 발급"),
+            @ApiResponse(responseCode = "401", description = "신분증 검증 실패")
     })
-    @io.swagger.v3.oas.annotations.parameters.RequestBody(
+    @RequestBody(
             description = "검증 요청 데이터 (STEP 1, 2에서 받은 값들 + provider)",
             required = true,
             content = @Content(
@@ -121,8 +123,8 @@ public interface AuthApi {
                     """
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "토큰 갱신 성공"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "유효하지 않은 리프레시 토큰")
+            @ApiResponse(responseCode = "200", description = "토큰 갱신 성공"),
+            @ApiResponse(responseCode = "401", description = "유효하지 않은 리프레시 토큰")
     })
     ResponseEntity<CommonResponse<AuthResponse>> refresh(RefreshRequest request);
 
@@ -134,7 +136,7 @@ public interface AuthApi {
                     """
     )
     @ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "로그아웃 성공")
+            @ApiResponse(responseCode = "200", description = "로그아웃 성공")
     })
     ResponseEntity<CommonResponse<Void>> logout(RefreshRequest request);
 }

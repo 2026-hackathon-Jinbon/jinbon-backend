@@ -13,7 +13,7 @@ class VcVerificationServiceTest {
 
     @Test
     void disabledIntegrationIsNotReportedAsVerified() {
-        OpenDidVerifierClient client = mock(OpenDidVerifierClient.class);
+        OpenDidIssuerClient client = mock(OpenDidIssuerClient.class);
         OpenDidProperties properties = mock(OpenDidProperties.class);
         when(properties.isEnabled()).thenReturn(false);
 
@@ -27,15 +27,40 @@ class VcVerificationServiceTest {
 
     @Test
     void verifierFailureIsReportedAsUnavailable() {
-        OpenDidVerifierClient client = mock(OpenDidVerifierClient.class);
+        OpenDidIssuerClient client = mock(OpenDidIssuerClient.class);
         OpenDidProperties properties = mock(OpenDidProperties.class);
         when(properties.isEnabled()).thenReturn(true);
         doThrow(new RuntimeException("connection refused"))
-                .when(client).getVcStatus("vc-1");
+                .when(client).getIssuedVcStatus("vc-1");
 
         VcVerificationService service = new VcVerificationService(client, properties);
 
         assertThat(service.verifyStatus("vc-1"))
                 .isEqualTo(VcVerificationService.VerificationStatus.UNAVAILABLE);
+    }
+
+    @Test
+    void activeIssuedVcIsVerified() {
+        OpenDidIssuerClient client = mock(OpenDidIssuerClient.class);
+        OpenDidProperties properties = mock(OpenDidProperties.class);
+        when(properties.isEnabled()).thenReturn(true);
+        when(client.getIssuedVcStatus("vc-1")).thenReturn("ACTIVE");
+
+        VcVerificationService service = new VcVerificationService(client, properties);
+
+        assertThat(service.verifyStatus("vc-1"))
+                .isEqualTo(VcVerificationService.VerificationStatus.VERIFIED);
+    }
+
+    @Test
+    void missingIssuedVcIsInvalid() {
+        OpenDidIssuerClient client = mock(OpenDidIssuerClient.class);
+        OpenDidProperties properties = mock(OpenDidProperties.class);
+        when(properties.isEnabled()).thenReturn(true);
+
+        VcVerificationService service = new VcVerificationService(client, properties);
+
+        assertThat(service.verifyStatus("vc-1"))
+                .isEqualTo(VcVerificationService.VerificationStatus.INVALID);
     }
 }

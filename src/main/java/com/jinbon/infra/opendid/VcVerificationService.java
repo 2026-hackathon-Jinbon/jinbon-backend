@@ -4,14 +4,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.Map;
-
 /**
- * Open DID VC 검증 서비스.
- *
- * 검증 항목:
- * 1. VC 상태 확인 — active / revoked / expired
- * 2. VC 서명 무결성 검증 — 발급 기관의 서명이 유효한지 확인
+ * Open DID Issuer 발급 원장에서 VC 상태를 확인하는 서비스.
+ * VC의 암호학적 검증은 VC 원문을 제출하는 VP 검증 흐름에서 수행한다.
  */
 @Slf4j
 @Service
@@ -22,14 +17,11 @@ public class VcVerificationService {
     }
 
     private static final String STATUS_ACTIVE = "ACTIVE";
-    private static final String RESULT_VALID = "VALID";
-
-    private final OpenDidVerifierClient verifierClient;
+    private final OpenDidIssuerClient issuerClient;
     private final com.jinbon.global.config.OpenDidProperties openDidProperties;
 
     /**
-     * VC를 검증한다.
-     * 상태 확인(active) + 서명 무결성 검증을 수행한다.
+     * Issuer 발급 원장에 VC가 존재하고 활성 상태인지 확인한다.
      *
      * @param vcId 검증할 VC ID
      * @return 검증 통과 여부
@@ -47,25 +39,14 @@ public class VcVerificationService {
         log.info("Starting VC verification - vcId={}", vcId);
 
         try {
-            // 1. VC 상태 확인 (active / revoked / expired)
-            Map<String, Object> statusResult = verifierClient.getVcStatus(vcId);
-            String status = (String) statusResult.get("status");
+            String status = issuerClient.getIssuedVcStatus(vcId);
 
             if (!STATUS_ACTIVE.equalsIgnoreCase(status)) {
                 log.warn("VC is not active - vcId={}, status={}", vcId, status);
                 return VerificationStatus.INVALID;
             }
 
-            // 2. VC 서명 무결성 검증
-            Map<String, Object> verifyResult = verifierClient.verifyVc(vcId);
-            String result = (String) verifyResult.get("result");
-
-            if (!RESULT_VALID.equalsIgnoreCase(result)) {
-                log.warn("VC integrity verification failed - vcId={}, result={}", vcId, result);
-                return VerificationStatus.INVALID;
-            }
-
-            log.info("VC verification passed - vcId={}", vcId);
+            log.info("Issued VC is active - vcId={}", vcId);
             return VerificationStatus.VERIFIED;
 
         } catch (Exception e) {

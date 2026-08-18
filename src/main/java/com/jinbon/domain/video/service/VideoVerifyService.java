@@ -52,8 +52,8 @@ public class VideoVerifyService {
         VERIFIED, INVALID, UNAVAILABLE
     }
 
-    private static final String VERIFY_CACHE_KEY_PREFIX = "verify:result:";
-    private static final String VIDEO_CACHE_INDEX_PREFIX = "verify:video:";
+    private static final String VERIFY_CACHE_KEY_PREFIX = "verify:v2:result:";
+    private static final String VIDEO_CACHE_INDEX_PREFIX = "verify:v2:video:";
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
     private static final Set<String> ALLOWED_VIDEO_HOSTS = Set.of(
             "youtube.com", "youtu.be", "instagram.com", "tiktok.com",
@@ -66,6 +66,7 @@ public class VideoVerifyService {
     private final SignatureService signatureService;
     private final OmniOneChainClient omniOneChainClient;
     private final VcVerificationService vcVerificationService;
+    private final VideoCertificateClaims videoCertificateClaims;
     private final VideoDownloadService videoDownloadService;
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper;
@@ -224,15 +225,20 @@ public class VideoVerifyService {
         BlockchainStatus blockchainStatus = verifyOnBlockchain(video);
         boolean blockchainVerified = blockchainStatus == BlockchainStatus.VERIFIED;
 
-        // VC 검증 — 상태(active) + 서명 무결성 확인
+        // VC 확인 — Issuer 발급 원장의 활성 상태 + 등록 당시 클레임 스냅샷 일치 여부
         VerificationStatus vcStatus = verifyVc(video);
         boolean vcVerified = vcStatus == VerificationStatus.VERIFIED;
 
         boolean certificateIssued = video.getVcId() != null;
+        boolean vcClaimsBound = certificateIssued && videoCertificateClaims.matchesSnapshot(video);
+        boolean certificateMissing = !certificateIssued;
         boolean verificationUnavailable = blockchainStatus == BlockchainStatus.UNAVAILABLE
-                || (certificateIssued && vcStatus == VerificationStatus.UNAVAILABLE);
-        boolean certificateInvalid = certificateIssued && vcStatus == VerificationStatus.INVALID;
-        boolean authentic = blockchainVerified && !verificationUnavailable && !certificateInvalid;
+                || (certificateIssued && (vcStatus == VerificationStatus.UNAVAILABLE
+                || vcStatus == VerificationStatus.DISABLED));
+        boolean certificateInvalid = certificateIssued
+                && (vcStatus == VerificationStatus.INVALID || !vcClaimsBound);
+        boolean authentic = blockchainVerified && vcVerified && vcClaimsBound
+                && !verificationUnavailable && !certificateInvalid;
         VerificationVerdict verdict = verificationUnavailable
                 ? VerificationVerdict.VERIFICATION_UNAVAILABLE : matchedVerdict;
         String message;
@@ -244,10 +250,14 @@ public class VideoVerifyService {
             verdict = VerificationVerdict.VERIFICATION_UNAVAILABLE;
             message = "등록 기록은 찾았지만 블록체인 무결성 검증을 통과하지 못했습니다.";
             notice = "운영자 확인이 필요합니다.";
+        } else if (certificateMissing) {
+            verdict = VerificationVerdict.CERTIFICATE_MISSING;
+            message = "블록체인 등록 기록은 확인했지만 신원 기반 VC 보증서가 발급되지 않았습니다.";
+            notice = "보증서 발급 전에는 진본 인증 완료로 판단하지 않습니다.";
         } else if (certificateInvalid) {
             verdict = VerificationVerdict.CERTIFICATE_INVALID;
             message = "영상의 블록체인 등록 기록은 확인했지만 VC 보증서가 유효하지 않습니다.";
-            notice = "보증서가 폐기·만료되었거나 서명 검증을 통과하지 못했습니다.";
+            notice = "보증서가 폐기·만료되었거나 등록 당시 정보와 일치하지 않습니다.";
         } else if (matchedVerdict == VerificationVerdict.EXACT_MATCH) {
             message = "등록된 원본 파일과 정확히 일치합니다.";
         } else if (matchedVerdict == VerificationVerdict.SAME_CONTENT) {
@@ -262,7 +272,7 @@ public class VideoVerifyService {
 
         return new VideoVerifyResponse(verdict, similarityDistance, authentic,
                 video.getId(), video.getIssuerDid(), video.getRegisteredAt(),
-                blockchainVerified, vcVerified, true, message, notice);
+                blockchainVerified, vcVerified, vcClaimsBound, true, message, notice);
     }
 
     /**

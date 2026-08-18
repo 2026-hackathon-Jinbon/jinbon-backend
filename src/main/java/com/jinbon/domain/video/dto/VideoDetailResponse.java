@@ -16,6 +16,8 @@ public record VideoDetailResponse(
         @Schema(description = "VC 발급기관 DID. 영상 등록자 DID와 다름", nullable = true) String vcIssuerDid,
         @Schema(description = "VC 보증 범위", nullable = true) String vcAssuranceType,
         @Schema(description = "VC 발급 상태", allowableValues = {"NOT_REQUESTED", "PENDING_WALLET", "ISSUED"}) String vcIssuanceStatus,
+        @Schema(description = "사용자 표시용 통합 등록 상태",
+                allowableValues = {"PENDING_VC", "COMPLETED", "DEACTIVATED"}) String registrationStatus,
         @Schema(description = "활성 상태") boolean active,
         @Schema(description = "등록 시각") LocalDateTime registeredAt,
         @Schema(description = "비활성화 시각") LocalDateTime deactivatedAt
@@ -26,7 +28,18 @@ public record VideoDetailResponse(
                 video.getTxHash(), video.getBlockNumber(), video.getVcId(),
                 video.getVcIssuerDid(), video.getVcAssuranceType(),
                 video.getVcIssuanceStatus() != null ? video.getVcIssuanceStatus().name() : null,
+                registrationStatus(video),
                 video.isActive(), video.getRegisteredAt(), video.getDeactivatedAt()
         );
+    }
+
+    private static String registrationStatus(Video video) {
+        if (!video.isActive()) {
+            return "DEACTIVATED";
+        }
+        return video.getVcId() != null
+                && video.getVcClaimSnapshotHash() != null
+                && video.getVcIssuanceStatus() == com.jinbon.domain.video.entity.VcIssuanceStatus.ISSUED
+                ? "COMPLETED" : "PENDING_VC";
     }
 }

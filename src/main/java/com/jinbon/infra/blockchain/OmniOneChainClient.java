@@ -124,7 +124,7 @@ public class OmniOneChainClient {
         );
 
         // 로컬 서명
-        long chainId = getChainId();
+        long chainId = Long.parseLong(getChainId());
         byte[] signedMessage = TransactionEncoder.signMessage(rawTransaction, chainId, credentials);
         String hexValue = Numeric.toHexString(signedMessage);
         log.debug("Transaction signed - chainId={}, signedTxLength={}", chainId, hexValue.length());
@@ -192,7 +192,7 @@ public class OmniOneChainClient {
     }
 
     /** 현재 연결된 체인의 ID를 조회한다 */
-    private long getChainId() {
+    public String getChainId() {
         Map<String, Object> body = Map.of(
                 "jsonrpc", "2.0",
                 "method", "eth_chainId",
@@ -202,7 +202,7 @@ public class OmniOneChainClient {
 
         Map<String, Object> response = post(body);
         String result = response != null ? (String) response.get("result") : "0x1";
-        return Numeric.decodeQuantity(result).longValue();
+        return Numeric.decodeQuantity(result).toString();
     }
 
     /** JSON-RPC POST 요청을 전송한다 */
