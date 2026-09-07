@@ -1,4 +1,4 @@
-package com.jinbon.global.config;
+package com.jinbon.infra.redis;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

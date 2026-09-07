@@ -1,7 +1,5 @@
 package com.jinbon.domain.video.service;
 
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.ObjectMapper;
 import com.jinbon.domain.video.dto.VideoVerifyResponse;
 import com.jinbon.domain.video.dto.VerificationVerdict;
 import com.jinbon.domain.video.entity.Video;
@@ -9,12 +7,12 @@ import com.jinbon.domain.video.port.CredentialVerificationPort;
 import com.jinbon.domain.video.port.CredentialVerificationPort.Status;
 import com.jinbon.domain.video.port.VideoLedgerPort;
 import com.jinbon.domain.video.port.VideoSourcePort;
+import com.jinbon.domain.video.port.VerificationCache;
 import com.jinbon.domain.video.repository.VideoRepository;
 import com.jinbon.global.error.BusinessException;
 import com.jinbon.global.error.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -28,7 +26,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
@@ -50,9 +47,6 @@ public class VideoVerifyService {
         VERIFIED, INVALID, UNAVAILABLE
     }
 
-    private static final String VERIFY_CACHE_KEY_PREFIX = "verify:v2:result:";
-    private static final String VIDEO_CACHE_INDEX_PREFIX = "verify:v2:video:";
-    private static final Duration CACHE_TTL = Duration.ofMinutes(10);
     private static final Set<String> ALLOWED_VIDEO_HOSTS = Set.of(
             "youtube.com", "youtu.be", "instagram.com", "tiktok.com",
             "twitter.com", "x.com", "vimeo.com"
@@ -66,8 +60,7 @@ public class VideoVerifyService {
     private final CredentialVerificationPort credentialVerificationPort;
     private final VideoCertificateClaims videoCertificateClaims;
     private final VideoSourcePort videoSourcePort;
-    private final RedisTemplate<String, String> redisTemplate;
-    private final ObjectMapper objectMapper;
+    private final VerificationCache verificationCache;
 
     /**
      * 영상 파일을 검증한다.
@@ -83,7 +76,7 @@ public class VideoVerifyService {
         log.debug("Fine hash recalculated - fineHash={}", fineHash.substring(0, 16) + "...");
 
         // 캐시에서 검증 결과 조회
-        VideoVerifyResponse cached = getCachedResult(fineHash);
+        VideoVerifyResponse cached = verificationCache.get(fineHash);
         if (cached != null) {
             log.info("Verify cache HIT - fineHash={}, authentic={}", fineHash.substring(0, 16) + "...", cached.authentic());
             return cached;
@@ -94,7 +87,7 @@ public class VideoVerifyService {
         if (video != null) {
             log.info("Exact match found - videoId={}", video.getId());
             VideoVerifyResponse result = buildVerifyResult(video, VerificationVerdict.EXACT_MATCH, null);
-            cacheResult(fineHash, result);
+            verificationCache.put(fineHash, result);
             return result;
         }
 
@@ -106,7 +99,7 @@ public class VideoVerifyService {
         if (similarVideo == null) {
             log.info("No similar video found");
             VideoVerifyResponse result = VideoVerifyResponse.notRegistered();
-            cacheResult(fineHash, result);
+            verificationCache.put(fineHash, result);
             return result;
         }
 
@@ -117,7 +110,7 @@ public class VideoVerifyService {
                 ? VerificationVerdict.SAME_CONTENT
                 : VerificationVerdict.SIMILAR_MATCH;
         VideoVerifyResponse result = buildVerifyResult(similarVideo, matchedVerdict, distance);
-        cacheResult(fineHash, result);
+        verificationCache.put(fineHash, result);
         return result;
     }
 
@@ -137,7 +130,7 @@ public class VideoVerifyService {
 
         // 캐시 조회 (URL을 SHA-256 해시로 변환하여 키로 사용 — 악의적 긴 URL 방어)
         String urlCacheKey = hashUrlForCacheKey(url);
-        VideoVerifyResponse cached = getCachedResult(urlCacheKey);
+        VideoVerifyResponse cached = verificationCache.get(urlCacheKey);
         if (cached != null) {
             log.info("Verify cache HIT - authentic={}", cached.authentic());
             return cached;
@@ -156,7 +149,7 @@ public class VideoVerifyService {
                 log.info("Exact match found from URL - videoId={}", video.getId());
                 VideoVerifyResponse result = buildVerifyResult(
                         video, VerificationVerdict.EXACT_MATCH, null);
-                cacheResult(urlCacheKey, result);
+                verificationCache.put(urlCacheKey, result);
                 return result;
             }
 
@@ -167,7 +160,7 @@ public class VideoVerifyService {
             if (similarVideo == null) {
                 log.info("No similar video found for URL");
                 VideoVerifyResponse result = VideoVerifyResponse.notRegistered();
-                cacheResult(urlCacheKey, result);
+                verificationCache.put(urlCacheKey, result);
                 return result;
             }
 
@@ -179,7 +172,7 @@ public class VideoVerifyService {
                     ? VerificationVerdict.SAME_CONTENT
                     : VerificationVerdict.SIMILAR_MATCH;
             VideoVerifyResponse result = buildVerifyResult(similarVideo, matchedVerdict, distance);
-            cacheResult(urlCacheKey, result);
+            verificationCache.put(urlCacheKey, result);
             return result;
 
         } catch (IOException e) {
@@ -195,14 +188,7 @@ public class VideoVerifyService {
      * 영상 비활성화 시 호출하여 이전 검증 결과가 반환되지 않도록 한다.
      */
     public void evictCache(Video video) {
-        String indexKey = VIDEO_CACHE_INDEX_PREFIX + video.getId();
-        Set<String> indexedKeys = redisTemplate.opsForSet().members(indexKey);
-        if (indexedKeys != null && !indexedKeys.isEmpty()) {
-            redisTemplate.delete(indexedKeys);
-        }
-        redisTemplate.delete(List.of(VERIFY_CACHE_KEY_PREFIX + video.getFineHash(), indexKey));
-        log.debug("Verify caches evicted - videoId={}, indexedKeyCount={}",
-                video.getId(), indexedKeys != null ? indexedKeys.size() : 0);
+        verificationCache.evict(video);
     }
 
     /**
@@ -335,43 +321,6 @@ public class VideoVerifyService {
             return Status.DISABLED;
         }
         return credentialVerificationPort.verify(video.getVcId());
-    }
-
-    private VideoVerifyResponse getCachedResult(String fineHash) {
-        String json = redisTemplate.opsForValue().get(VERIFY_CACHE_KEY_PREFIX + fineHash);
-        if (json == null) {
-            return null;
-        }
-        try {
-            VideoVerifyResponse result = objectMapper.readValue(json, VideoVerifyResponse.class);
-            if (result.verdict() == null) {
-                redisTemplate.delete(VERIFY_CACHE_KEY_PREFIX + fineHash);
-                return null;
-            }
-            return result;
-        } catch (JacksonException e) {
-            log.warn("Failed to deserialize cached verify result, ignoring cache");
-            return null;
-        }
-    }
-
-    private void cacheResult(String fineHash, VideoVerifyResponse result) {
-        if (result.verdict() == VerificationVerdict.VERIFICATION_UNAVAILABLE) {
-            return;
-        }
-        try {
-            String resultKey = VERIFY_CACHE_KEY_PREFIX + fineHash;
-            String json = objectMapper.writeValueAsString(result);
-            redisTemplate.opsForValue().set(resultKey, json, CACHE_TTL);
-            if (result.videoId() != null) {
-                String indexKey = VIDEO_CACHE_INDEX_PREFIX + result.videoId();
-                redisTemplate.opsForSet().add(indexKey, resultKey);
-                redisTemplate.expire(indexKey, CACHE_TTL);
-            }
-            log.debug("Verify result cached - fineHash={}, ttl={}min", fineHash.substring(0, 16) + "...", CACHE_TTL.toMinutes());
-        } catch (JacksonException e) {
-            log.warn("Failed to cache verify result");
-        }
     }
 
     private String generateFineHash(MultipartFile file) {

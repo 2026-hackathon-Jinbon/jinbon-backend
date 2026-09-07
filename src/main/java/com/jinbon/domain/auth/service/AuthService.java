@@ -5,6 +5,8 @@ import com.jinbon.domain.auth.dto.VerifyRequest;
 import com.jinbon.domain.auth.dto.SignupIdentityResponse;
 import com.jinbon.domain.auth.port.IdentityVerificationPort;
 import com.jinbon.domain.auth.port.IdentityVerificationPort.VerifiedIdentity;
+import com.jinbon.domain.auth.port.DidRebindTokenStore;
+import com.jinbon.domain.auth.port.RefreshTokenStore;
 import com.jinbon.domain.member.entity.Member;
 import com.jinbon.domain.member.entity.MemberRole;
 import com.jinbon.domain.member.entity.MemberStatus;
@@ -34,8 +36,8 @@ public class AuthService {
     private final MemberRepository memberRepository;
     private final VideoRepository videoRepository;
     private final JwtTokenProvider jwtTokenProvider;
-    private final RefreshTokenService refreshTokenService;
-    private final DidRebindTokenService didRebindTokenService;
+    private final RefreshTokenStore refreshTokenStore;
+    private final DidRebindTokenStore didRebindTokenStore;
     private final CiHasher ciHasher;
 
     /** OmniOne CX 인증 세션 토큰을 발급한다 */
@@ -83,7 +85,7 @@ public class AuthService {
         String newAccessToken = jwtTokenProvider.createAccessToken(member.getId(), role);
         String newRefreshToken = jwtTokenProvider.createRefreshToken(member.getId(), role);
 
-        if (!refreshTokenService.rotate(memberId, refreshToken, newRefreshToken)) {
+        if (!refreshTokenStore.rotate(memberId, refreshToken, newRefreshToken)) {
             log.warn("Refresh token expired or already used - memberId={}", memberId);
             throw new BusinessException(ErrorCode.REFRESH_TOKEN_EXPIRED);
         }
@@ -96,7 +98,7 @@ public class AuthService {
     public void logout(String refreshToken) {
         if (jwtTokenProvider.validateToken(refreshToken)) {
             Long memberId = jwtTokenProvider.getMemberId(refreshToken);
-            refreshTokenService.delete(memberId);
+            refreshTokenStore.delete(memberId);
             log.info("Logout completed - memberId={}", memberId);
         }
     }
@@ -122,12 +124,12 @@ public class AuthService {
         String accessToken = jwtTokenProvider.createAccessToken(member.getId(), role);
         String refreshToken = jwtTokenProvider.createRefreshToken(member.getId(), role);
 
-        refreshTokenService.save(member.getId(), refreshToken);
+        refreshTokenStore.save(member.getId(), refreshToken);
 
         log.info("Login successful - memberId={}, role={}", member.getId(), role);
 
         String didRebindToken = jwtTokenProvider.createDidRebindToken(member.getId());
-        didRebindTokenService.save(member.getId(), didRebindToken);
+        didRebindTokenStore.save(member.getId(), didRebindToken);
         return authResponse(member, accessToken, refreshToken, didRebindToken);
     }
 
@@ -187,7 +189,7 @@ public class AuthService {
         String role = member.getRole().name();
         String accessToken = jwtTokenProvider.createAccessToken(member.getId(), role);
         String refreshToken = jwtTokenProvider.createRefreshToken(member.getId(), role);
-        refreshTokenService.save(member.getId(), refreshToken);
+        refreshTokenStore.save(member.getId(), refreshToken);
         return authResponse(member, accessToken, refreshToken, null);
     }
 
@@ -211,7 +213,7 @@ public class AuthService {
         ensureActive(member);
 
         // 토큰을 먼저 소비하여 동시 요청에 의한 TOCTOU 공격을 차단한다
-        if (!didRebindTokenService.consume(memberId, didRebindToken)) {
+        if (!didRebindTokenStore.consume(memberId, didRebindToken)) {
             throw new BusinessException(ErrorCode.NOT_A_DID_REBIND_TOKEN);
         }
 
@@ -228,7 +230,7 @@ public class AuthService {
         String role = member.getRole().name();
         String accessToken = jwtTokenProvider.createAccessToken(member.getId(), role);
         String refreshToken = jwtTokenProvider.createRefreshToken(member.getId(), role);
-        refreshTokenService.save(member.getId(), refreshToken);
+        refreshTokenStore.save(member.getId(), refreshToken);
         log.info("DID reconnected - memberId={}, did={}", member.getId(), did);
         return authResponse(member, accessToken, refreshToken, null);
     }

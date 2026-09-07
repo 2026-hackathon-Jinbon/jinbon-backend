@@ -1,36 +1,35 @@
-package com.jinbon.domain.auth.service;
+package com.jinbon.infra.redis;
 
+import com.jinbon.domain.auth.port.RefreshTokenStore;
+import com.jinbon.domain.auth.service.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
-import java.util.concurrent.TimeUnit;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
-/**
- * Refresh Token 관리 서비스.
- *
- * Redis에 memberId별로 단일 Refresh Token을 저장한다.
- * Refresh Token Rotation: 갱신 시 새 토큰을 저장하면 기존 토큰은 자동 무효화된다.
- */
+/** Redis 기반 Refresh Token 저장소. */
 @Service
 @RequiredArgsConstructor
-public class RefreshTokenService {
+public class RedisRefreshTokenStore implements RefreshTokenStore {
 
     private static final String KEY_PREFIX = "refresh:";
 
     private final RedisTemplate<String, String> redisTemplate;
     private final JwtTokenProvider jwtTokenProvider;
 
-    /** Refresh Token을 Redis에 저장한다 (TTL: refresh-expiration) */
+    @Override
     public void save(Long memberId, String refreshToken) {
-        String key = KEY_PREFIX + memberId;
-        long expirationMs = jwtTokenProvider.getRefreshExpiration();
-        redisTemplate.opsForValue().set(key, refreshToken, expirationMs, TimeUnit.MILLISECONDS);
+        redisTemplate.opsForValue().set(
+                KEY_PREFIX + memberId,
+                refreshToken,
+                jwtTokenProvider.getRefreshExpiration(),
+                TimeUnit.MILLISECONDS);
     }
 
-    /** 기존 토큰이 일치할 때만 새 토큰으로 원자적으로 교체한다. */
+    @Override
     public boolean rotate(Long memberId, String oldToken, String newToken) {
         String script = """
                 if redis.call('get', KEYS[1]) == ARGV[1] then
@@ -45,7 +44,7 @@ public class RefreshTokenService {
         return Long.valueOf(1L).equals(result);
     }
 
-    /** Refresh Token을 삭제한다 (로그아웃) */
+    @Override
     public void delete(Long memberId) {
         redisTemplate.delete(KEY_PREFIX + memberId);
     }
