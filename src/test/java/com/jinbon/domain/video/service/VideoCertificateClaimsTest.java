@@ -1,6 +1,7 @@
 package com.jinbon.domain.video.service;
 
 import com.jinbon.domain.video.entity.Video;
+import com.jinbon.domain.video.port.CredentialVerificationPort.VerificationResult;
 import com.jinbon.domain.video.port.VideoLedgerPort;
 import com.jinbon.global.config.BlockchainProperties;
 import com.jinbon.global.config.OpenDidProperties;
@@ -72,6 +73,36 @@ class VideoCertificateClaimsTest {
         video.recordBlockchain("0x20", "0xdifferent");
 
         assertThat(claims.matchesSnapshot(video)).isFalse();
+    }
+
+    @Test
+    void matchesVerifiedCredentialToVideoAndIssuerContext() {
+        Video video = registeredVideo();
+        String issuerDid = "did:omn:issuer";
+        video.markVcPending("offer", "plan", issuerDid,
+                claims.create(video).snapshotHash(issuerDid),
+                VideoCertificateClaims.SCHEMA_VERSION, VideoCertificateClaims.ASSURANCE_TYPE);
+
+        VerificationResult result = new VerificationResult(
+                com.jinbon.domain.video.port.CredentialVerificationPort.Status.VERIFIED,
+                issuerDid, video.getIssuerDid(), claims.create(video).claims());
+
+        assertThat(claims.matchesCredential(video, result)).isTrue();
+    }
+
+    @Test
+    void rejectsCredentialFromAnotherVideoOrHolder() {
+        Video video = registeredVideo();
+        String issuerDid = "did:omn:issuer";
+        video.markVcPending("offer", "plan", issuerDid,
+                claims.create(video).snapshotHash(issuerDid),
+                VideoCertificateClaims.SCHEMA_VERSION, VideoCertificateClaims.ASSURANCE_TYPE);
+
+        VerificationResult result = new VerificationResult(
+                com.jinbon.domain.video.port.CredentialVerificationPort.Status.VERIFIED,
+                issuerDid, "did:omn:another-holder", claims.create(video).claims());
+
+        assertThat(claims.matchesCredential(video, result)).isFalse();
     }
 
     private Video registeredVideo() {

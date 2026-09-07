@@ -9,6 +9,7 @@ import com.jinbon.domain.video.entity.Video;
 import com.jinbon.domain.video.port.CredentialIssuancePort;
 import com.jinbon.domain.video.port.CredentialIssuancePort.Preparation;
 import com.jinbon.domain.video.port.CredentialVerificationPort;
+import com.jinbon.domain.video.port.CredentialVerificationPort.VerificationResult;
 import com.jinbon.domain.video.port.VideoLedgerPort;
 import com.jinbon.domain.video.repository.VideoRepository;
 import com.jinbon.global.config.OpenDidProperties;
@@ -203,10 +204,12 @@ public class VideoRegisterService {
         if (!videoCertificateClaims.matchesSnapshot(video)) {
             throw new BusinessException(ErrorCode.VC_ISSUANCE_CONTEXT_MISMATCH);
         }
-        if (credentialVerificationPort.verify(vcId) != CredentialVerificationPort.Status.VERIFIED) {
+        VerificationResult verification = credentialVerificationPort.verify(vcId);
+        if (!videoCertificateClaims.matchesCredential(video, verification)) {
             throw new BusinessException(ErrorCode.VC_VERIFICATION_FAILED);
         }
         video.completeVcIssuance(vcId, offerId);
+        videoVerifyService.evictCache(video);
         log.info("Wallet VC issuance confirmed - videoId={}, memberId={}, vcId={}", videoId, memberId, vcId);
     }
 

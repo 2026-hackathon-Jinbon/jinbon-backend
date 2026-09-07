@@ -5,6 +5,7 @@ import com.jinbon.domain.video.dto.VerificationVerdict;
 import com.jinbon.domain.video.entity.Video;
 import com.jinbon.domain.video.port.CredentialVerificationPort;
 import com.jinbon.domain.video.port.CredentialVerificationPort.Status;
+import com.jinbon.domain.video.port.CredentialVerificationPort.VerificationResult;
 import com.jinbon.domain.video.port.VideoLedgerPort;
 import com.jinbon.domain.video.port.VideoSourcePort;
 import com.jinbon.domain.video.port.VerificationCache;
@@ -210,11 +211,14 @@ public class VideoVerifyService {
         boolean blockchainVerified = blockchainStatus == BlockchainStatus.VERIFIED;
 
         // VC 확인 — Issuer 발급 원장의 활성 상태 + 등록 당시 클레임 스냅샷 일치 여부
-        Status vcStatus = verifyVc(video);
+        VerificationResult vcResult = verifyVc(video);
+        Status vcStatus = vcResult.status();
         boolean vcVerified = vcStatus == Status.VERIFIED;
 
         boolean certificateIssued = video.getVcId() != null;
-        boolean vcClaimsBound = certificateIssued && videoCertificateClaims.matchesSnapshot(video);
+        boolean vcClaimsBound = certificateIssued
+                && videoCertificateClaims.matchesSnapshot(video)
+                && videoCertificateClaims.matchesCredential(video, vcResult);
         boolean certificateMissing = !certificateIssued;
         boolean verificationUnavailable = blockchainStatus == BlockchainStatus.UNAVAILABLE
                 || (certificateIssued && (vcStatus == Status.UNAVAILABLE
@@ -315,10 +319,10 @@ public class VideoVerifyService {
      * VC의 상태(active/revoked/expired)와 서명 무결성을 검증한다.
      * vcId가 없는 경우(VC 미발급) false를 반환한다.
      */
-    private Status verifyVc(Video video) {
+    private VerificationResult verifyVc(Video video) {
         if (video.getVcId() == null) {
             log.debug("No VC issued for video - videoId={}", video.getId());
-            return Status.DISABLED;
+            return VerificationResult.disabled();
         }
         return credentialVerificationPort.verify(video.getVcId());
     }

@@ -1,6 +1,8 @@
 package com.jinbon.domain.video.service;
 
 import com.jinbon.domain.video.entity.Video;
+import com.jinbon.domain.video.port.CredentialVerificationPort;
+import com.jinbon.domain.video.port.CredentialVerificationPort.VerificationResult;
 import com.jinbon.domain.video.port.VideoLedgerPort;
 import com.jinbon.global.config.BlockchainProperties;
 import com.jinbon.global.config.OpenDidProperties;
@@ -13,6 +15,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /** 온체인 영상 등록 사실을 증명하는 VC의 클레임과 결속 해시를 생성한다. */
 @Component
@@ -86,6 +89,23 @@ public class VideoCertificateClaims {
             return MessageDigest.isEqual(
                     current.getBytes(StandardCharsets.UTF_8),
                     video.getVcClaimSnapshotHash().getBytes(StandardCharsets.UTF_8));
+        } catch (IllegalStateException e) {
+            return false;
+        }
+    }
+
+    /** 검증된 VC의 issuer, subject, 핵심 claim이 영상의 발급 문맥과 일치하는지 확인한다. */
+    public boolean matchesCredential(Video video, VerificationResult result) {
+        if (result == null || result.status() != CredentialVerificationPort.Status.VERIFIED
+                || !Objects.equals(video.getVcIssuerDid(), result.issuerDid())
+                || !Objects.equals(video.getIssuerDid(), result.subjectDid())) {
+            return false;
+        }
+        try {
+            return create(video).claims().entrySet().stream()
+                    .allMatch(entry -> Objects.equals(
+                            String.valueOf(entry.getValue()),
+                            String.valueOf(result.claims().get(entry.getKey()))));
         } catch (IllegalStateException e) {
             return false;
         }

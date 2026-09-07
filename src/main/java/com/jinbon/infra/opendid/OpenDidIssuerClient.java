@@ -34,8 +34,8 @@ public class OpenDidIssuerClient {
         return result;
     }
 
-    /** Issuer 발급 원장에서 VC의 현재 상태를 조회한다. */
-    public String getIssuedVcStatus(String vcId) {
+    /** Issuer 발급 원장에서 VC의 상태와 claim을 조회한다. */
+    public IssuedVc getIssuedVc(String vcId) {
         log.debug("Querying issued VC status - vcId={}", vcId);
         Map<String, Object> result = api.searchIssuedVcs("vcId", vcId, 1);
         @SuppressWarnings("unchecked")
@@ -47,8 +47,7 @@ public class OpenDidIssuerClient {
         if (!vcId.equals(String.valueOf(issuedVc.get("vcId")))) {
             return null;
         }
-        Object status = issuedVc.get("status");
-        return status != null ? status.toString() : null;
+        return IssuedVc.from(issuedVc, objectMapper);
     }
 
     public void prepareHolder(String holderDid, String pii, Map<String, Object> claims) {
@@ -113,5 +112,72 @@ public class OpenDidIssuerClient {
     }
 
     public record IssueOffer(String offerId, String issuerDid) {}
+
+    public record IssuedVc(String status, String issuerDid, String subjectDid,
+                           Map<String, Object> claims) {
+        @SuppressWarnings("unchecked")
+        static IssuedVc from(Map<String, Object> issuedVc, ObjectMapper objectMapper) {
+            String status = text(issuedVc, "status");
+            String issuerDid = firstText(issuedVc, "issuerDid", "credentialIssuerDid");
+            Object issuer = issuedVc.get("issuer");
+            if (issuerDid == null && issuer instanceof Map<?, ?> issuerMap) {
+                issuerDid = text((Map<String, Object>) issuerMap, "id", "did");
+            } else if (issuerDid == null && issuer != null) {
+                issuerDid = issuer.toString();
+            }
+
+            Map<String, Object> claims = extractClaims(issuedVc, objectMapper);
+            String subjectDid = firstText(issuedVc, "subjectDid", "holderDid");
+            Object subject = issuedVc.get("credentialSubject");
+            if (subject instanceof Map<?, ?> subjectMap) {
+                Map<String, Object> values = (Map<String, Object>) subjectMap;
+                if (subjectDid == null) {
+                    subjectDid = firstText(values, "id", "did");
+                }
+                if (claims.isEmpty()) {
+                    claims = values;
+                }
+            }
+            return new IssuedVc(status, issuerDid, subjectDid, Map.copyOf(claims));
+        }
+
+        @SuppressWarnings("unchecked")
+        private static Map<String, Object> extractClaims(Map<String, Object> issuedVc,
+                                                         ObjectMapper objectMapper) {
+            Object candidate = issuedVc.get("claims");
+            if (candidate == null) {
+                candidate = issuedVc.get("userInfo");
+            }
+            if (candidate instanceof String json) {
+                try {
+                    candidate = objectMapper.readValue(json, Map.class);
+                } catch (JacksonException e) {
+                    return Map.of();
+                }
+            }
+            return candidate instanceof Map<?, ?> map
+                    ? (Map<String, Object>) map : Map.of();
+        }
+
+        private static String firstText(Map<String, Object> values, String... keys) {
+            for (String key : keys) {
+                String value = text(values, key);
+                if (value != null) {
+                    return value;
+                }
+            }
+            return null;
+        }
+
+        private static String text(Map<String, Object> values, String... keys) {
+            for (String key : keys) {
+                Object value = values.get(key);
+                if (value != null && !value.toString().isBlank()) {
+                    return value.toString();
+                }
+            }
+            return null;
+        }
+    }
 
 }
