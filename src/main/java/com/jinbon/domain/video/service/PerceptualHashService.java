@@ -113,13 +113,6 @@ public class PerceptualHashService {
     }
 
     /**
-     * 유사 영상 여부를 판정한다.
-     */
-    public boolean isSimilar(String fingerprint1, String fingerprint2) {
-        return compareFingerprints(fingerprint1, fingerprint2) < SIMILARITY_THRESHOLD;
-    }
-
-    /**
      * 영상에서 고정 간격으로 프레임을 추출하고 pHash를 계산한다.
      */
     private List<Long> extractFrameHashes(File videoFile) throws IOException {

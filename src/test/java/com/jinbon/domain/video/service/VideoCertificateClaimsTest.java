@@ -15,8 +15,7 @@ import static org.mockito.Mockito.when;
 class VideoCertificateClaimsTest {
 
     private final VideoCertificateClaims claims = new VideoCertificateClaims(
-            new OpenDidProperties(true, "issuer", "verifier", "plan",
-                    "ns-jinbon-video-01", "did:omn:issuer"),
+            new OpenDidProperties(true, "issuer", "plan", "ns-jinbon-video-01"),
             new BlockchainProperties("omnione", "100", "rpc", "0xcontract",
                     "wallet", "keystore", "password", "token"),
             mock(OmniOneChainClient.class)
@@ -44,8 +43,7 @@ class VideoCertificateClaimsTest {
         OmniOneChainClient chainClient = mock(OmniOneChainClient.class);
         when(chainClient.getChainId()).thenReturn("100");
         VideoCertificateClaims claimsWithoutConfiguredChainId = new VideoCertificateClaims(
-                new OpenDidProperties(true, "issuer", "verifier", "plan",
-                        "ns-jinbon-video-01", "did:omn:issuer"),
+                new OpenDidProperties(true, "issuer", "plan", "ns-jinbon-video-01"),
                 new BlockchainProperties("omnione", "", "rpc", "0xcontract",
                         "wallet", "keystore", "password", "token"),
                 chainClient);

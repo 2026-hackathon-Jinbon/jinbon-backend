@@ -143,11 +143,6 @@ public class Video {
         this.vcIssuanceStatus = VcIssuanceStatus.PENDING_WALLET;
     }
 
-    /** 기존 호출부 호환용. 신규 영상 보증서 발급은 메타데이터를 포함한 오버로드를 사용한다. */
-    public void markVcPending(String offerId, String planId, String vcIssuerDid) {
-        markVcPending(offerId, planId, vcIssuerDid, null, null, null);
-    }
-
     /**
      * Wallet에서 VC 발급이 완료되었음을 기록한다.
      * 반드시 PENDING_WALLET 상태에서만 호출 가능하다.

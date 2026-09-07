@@ -21,17 +21,11 @@ public class OpenDidProperties {
     /** Issuer 서버 URL */
     private final String issuerServerUrl;
 
-    /** Verifier 서버 URL */
-    private final String verifierServerUrl;
-
     /** VC Plan ID (발급 정책 식별자) */
     private final String vcPlanId;
 
     /** VC Claim 네임스페이스 (예: ns-jinbon-video-01) */
     private final String vcClaimNamespace;
-
-    /** Issuer DID (VC 발급자 식별자) */
-    private final String issuerDid;
 
     /**
      * 네임스페이스와 claimId를 결합하여 정규화된 Claim 키를 생성한다.

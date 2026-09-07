@@ -11,7 +11,8 @@ class VideoTest {
     @Test
     void completesVcOnlyWithThePreparedOffer() {
         Video video = video();
-        video.markVcPending("offer-1", "plan-1", "did:omn:issuer");
+        video.markVcPending("offer-1", "plan-1", "did:omn:issuer",
+                "snapshot", 1, "BLOCKCHAIN_REGISTRATION");
 
         video.completeVcIssuance("vc-1", "offer-1");
 
@@ -22,7 +23,8 @@ class VideoTest {
     @Test
     void rejectsVcFromAnotherOffer() {
         Video video = video();
-        video.markVcPending("offer-1", "plan-1", "did:omn:issuer");
+        video.markVcPending("offer-1", "plan-1", "did:omn:issuer",
+                "snapshot", 1, "BLOCKCHAIN_REGISTRATION");
 
         assertThatThrownBy(() -> video.completeVcIssuance("vc-1", "offer-2"))
                 .isInstanceOf(BusinessException.class)

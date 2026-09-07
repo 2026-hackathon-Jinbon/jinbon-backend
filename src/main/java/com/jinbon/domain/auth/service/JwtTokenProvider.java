@@ -104,10 +104,6 @@ public class JwtTokenProvider {
         return getClaims(token).get("type", String.class);
     }
 
-    public String getRole(String token) {
-        return getClaims(token).get("role", String.class);
-    }
-
     private Claims getClaims(String token) {
         return Jwts.parser().verifyWith(key).build()
                 .parseSignedClaims(token).getPayload();

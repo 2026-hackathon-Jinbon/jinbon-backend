@@ -274,7 +274,7 @@ CERTIFICATE_INVALID:
 | `VideoRegisterService` | 온체인 재조회 후 claim 생성, 새 클레임 키, snapshot 저장·비교 |
 | `Video` | 보증서 메타데이터와 claim snapshot 필드, 상태 전이 불변식 |
 | `VcIssuanceService`, `OpenDidIssuerClient` | `VideoRegistrationCredential` 클레임 전달과 동시 Offer 보호 |
-| `VcVerificationService`, `OpenDidVerifierClient` | 단순 VALID 확인이 아닌 issuer/subject/claims 검증 결과 반환 |
+| `VcVerificationService` | 단순 VALID 확인이 아닌 issuer/subject/claims 검증 결과 반환 |
 | `VideoVerifyService` | 등록 검증과 보증서 검증 분리, VC invalid 판정 수정 |
 | DTO/API 문서 | blockchain evidence와 certificate 결과 구조화 |
 | `OpenDidProperties`, `BlockchainProperties` | schema version, chain ID 등 증거 메타데이터 설정 |

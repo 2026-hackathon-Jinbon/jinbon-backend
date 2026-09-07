@@ -26,10 +26,8 @@ class OpenDidPropertiesTest {
         return new OpenDidProperties(
                 true,
                 "http://localhost:8091",
-                "http://localhost:8092",
                 "vcplan-jinbon-01",
-                namespace,
-                "did:omn:issuer"
+                namespace
         );
     }
 }

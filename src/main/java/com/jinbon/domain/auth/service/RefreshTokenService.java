@@ -30,13 +30,6 @@ public class RefreshTokenService {
         redisTemplate.opsForValue().set(key, refreshToken, expirationMs, TimeUnit.MILLISECONDS);
     }
 
-    /** 저장된 Refresh Token과 일치하는지 검증한다 */
-    public boolean validate(Long memberId, String refreshToken) {
-        String key = KEY_PREFIX + memberId;
-        String stored = redisTemplate.opsForValue().get(key);
-        return refreshToken.equals(stored);
-    }
-
     /** 기존 토큰이 일치할 때만 새 토큰으로 원자적으로 교체한다. */
     public boolean rotate(Long memberId, String oldToken, String newToken) {
         String script = """
