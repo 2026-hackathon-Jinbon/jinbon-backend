@@ -1,5 +1,6 @@
 package com.jinbon.infra.opendid;
 
+import com.jinbon.domain.video.port.CredentialVerificationPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -11,10 +12,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class VcVerificationService {
-    public enum VerificationStatus {
-        VERIFIED, INVALID, UNAVAILABLE, DISABLED
-    }
+public class VcVerificationService implements CredentialVerificationPort {
 
     private static final String STATUS_ACTIVE = "ACTIVE";
     private final OpenDidIssuerClient issuerClient;
@@ -26,14 +24,11 @@ public class VcVerificationService {
      * @param vcId 검증할 VC ID
      * @return 검증 통과 여부
      */
-    public boolean verify(String vcId) {
-        return verifyStatus(vcId) == VerificationStatus.VERIFIED;
-    }
-
-    public VerificationStatus verifyStatus(String vcId) {
+    @Override
+    public Status verify(String vcId) {
         if (!openDidProperties.isEnabled()) {
             log.info("Open DID is disabled, VC cannot be verified - vcId={}", vcId);
-            return VerificationStatus.DISABLED;
+            return Status.DISABLED;
         }
 
         log.info("Starting VC verification - vcId={}", vcId);
@@ -43,15 +38,15 @@ public class VcVerificationService {
 
             if (!STATUS_ACTIVE.equalsIgnoreCase(status)) {
                 log.warn("VC is not active - vcId={}, status={}", vcId, status);
-                return VerificationStatus.INVALID;
+                return Status.INVALID;
             }
 
             log.info("Issued VC is active - vcId={}", vcId);
-            return VerificationStatus.VERIFIED;
+            return Status.VERIFIED;
 
         } catch (Exception e) {
             log.warn("VC verification failed - vcId={}, reason={}", vcId, e.getMessage());
-            return VerificationStatus.UNAVAILABLE;
+            return Status.UNAVAILABLE;
         }
     }
 }

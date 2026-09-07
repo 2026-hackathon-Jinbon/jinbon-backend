@@ -1,9 +1,9 @@
 package com.jinbon.domain.video.service;
 
 import com.jinbon.domain.video.entity.Video;
+import com.jinbon.domain.video.port.VideoLedgerPort;
 import com.jinbon.global.config.BlockchainProperties;
 import com.jinbon.global.config.OpenDidProperties;
-import com.jinbon.infra.blockchain.OmniOneChainClient;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -25,7 +25,7 @@ public class VideoCertificateClaims {
 
     private final OpenDidProperties openDidProperties;
     private final BlockchainProperties blockchainProperties;
-    private final OmniOneChainClient omniOneChainClient;
+    private final VideoLedgerPort videoLedgerPort;
 
     public Draft create(Video video) {
         requireConfirmedRegistration(video);
@@ -59,7 +59,7 @@ public class VideoCertificateClaims {
 
     private String configuredChainId() {
         return isBlank(blockchainProperties.getChainId())
-                ? omniOneChainClient.getChainId()
+                ? videoLedgerPort.getChainId()
                 : blockchainProperties.getChainId();
     }
 

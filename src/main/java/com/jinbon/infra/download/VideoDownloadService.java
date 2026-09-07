@@ -1,5 +1,6 @@
 package com.jinbon.infra.download;
 
+import com.jinbon.domain.video.port.VideoSourcePort;
 import com.jinbon.global.error.BusinessException;
 import com.jinbon.global.error.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
@@ -22,7 +23,7 @@ import java.util.concurrent.Semaphore;
  */
 @Slf4j
 @Service
-public class VideoDownloadService {
+public class VideoDownloadService implements VideoSourcePort {
 
     /** 다운로드 타임아웃 (초) */
     private static final int DOWNLOAD_TIMEOUT_SECONDS = 120;
@@ -39,6 +40,7 @@ public class VideoDownloadService {
      * @param url 영상 URL (YouTube, Instagram, TikTok 등)
      * @return 다운로드된 임시 파일 경로
      */
+    @Override
     public Path download(String url) {
         log.info("Video download started - url={}", url);
 
@@ -116,6 +118,7 @@ public class VideoDownloadService {
     /**
      * 다운로드 임시 파일과 디렉토리를 정리한다.
      */
+    @Override
     public void cleanup(Path filePath) {
         try {
             if (filePath != null) {

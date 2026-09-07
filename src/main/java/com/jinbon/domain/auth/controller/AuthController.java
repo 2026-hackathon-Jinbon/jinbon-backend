@@ -5,9 +5,9 @@ import com.jinbon.domain.auth.dto.RefreshRequest;
 import com.jinbon.domain.auth.dto.RebindDidRequest;
 import com.jinbon.domain.auth.dto.VerifyRequest;
 import com.jinbon.domain.auth.service.AuthService;
+import com.jinbon.domain.auth.port.IdentityVerificationPort.AppRequest;
+import com.jinbon.domain.auth.port.IdentityVerificationPort.VerificationSession;
 import com.jinbon.global.common.CommonResponse;
-import com.jinbon.infra.omnione.dto.OacxAppResponse;
-import com.jinbon.infra.omnione.dto.OacxTokenResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -27,13 +27,13 @@ public class AuthController implements AuthApi {
 
     @PostMapping("/token")
     @Override
-    public ResponseEntity<CommonResponse<OacxTokenResponse>> createToken() {
+    public ResponseEntity<CommonResponse<VerificationSession>> createToken() {
         return ResponseEntity.ok(CommonResponse.success(authService.createOacxToken()));
     }
 
     @PostMapping("/app/request")
     @Override
-    public ResponseEntity<CommonResponse<OacxAppResponse>> requestApp(
+    public ResponseEntity<CommonResponse<AppRequest>> requestApp(
             @RequestParam String provider,
             @RequestParam String token,
             @RequestParam String txId) {

@@ -3,6 +3,8 @@ package com.jinbon.domain.auth.service;
 import com.jinbon.domain.auth.dto.AuthResponse;
 import com.jinbon.domain.auth.dto.VerifyRequest;
 import com.jinbon.domain.auth.dto.SignupIdentityResponse;
+import com.jinbon.domain.auth.port.IdentityVerificationPort;
+import com.jinbon.domain.auth.port.IdentityVerificationPort.VerifiedIdentity;
 import com.jinbon.domain.member.entity.Member;
 import com.jinbon.domain.member.entity.MemberRole;
 import com.jinbon.domain.member.entity.MemberStatus;
@@ -10,9 +12,6 @@ import com.jinbon.domain.member.repository.MemberRepository;
 import com.jinbon.domain.video.repository.VideoRepository;
 import com.jinbon.global.error.BusinessException;
 import com.jinbon.global.error.ErrorCode;
-import com.jinbon.infra.omnione.OmniOneCxClient;
-import com.jinbon.infra.omnione.dto.OacxParsedToken;
-import com.jinbon.infra.omnione.dto.OacxResultResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -31,7 +30,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class AuthService {
 
-    private final OmniOneCxClient omniOneCxClient;
+    private final IdentityVerificationPort identityVerificationPort;
     private final MemberRepository memberRepository;
     private final VideoRepository videoRepository;
     private final JwtTokenProvider jwtTokenProvider;
@@ -40,13 +39,13 @@ public class AuthService {
     private final CiHasher ciHasher;
 
     /** OmniOne CX 인증 세션 토큰을 발급한다 */
-    public com.jinbon.infra.omnione.dto.OacxTokenResponse createOacxToken() {
-        return omniOneCxClient.requestToken();
+    public IdentityVerificationPort.VerificationSession createOacxToken() {
+        return identityVerificationPort.createSession();
     }
 
     /** WebToApp 딥링크를 생성한다 */
-    public com.jinbon.infra.omnione.dto.OacxAppResponse requestApp(String provider, String token, String txId) {
-        return omniOneCxClient.requestWebToApp(provider, token, txId);
+    public IdentityVerificationPort.AppRequest requestApp(String provider, String token, String txId) {
+        return identityVerificationPort.requestApp(provider, token, txId);
     }
 
     /**
@@ -57,13 +56,9 @@ public class AuthService {
     public AuthResponse verifyAppAndLogin(VerifyRequest request) {
         log.info("App verification started - provider={}, txId={}", request.provider(), request.txId());
 
-        OacxResultResponse result = omniOneCxClient.verifyApp(
+        VerifiedIdentity identity = identityVerificationPort.verify(
                 request.provider(), request.token(), request.txId(), request.cxId());
-
-        ensureVerificationCompleted(result);
-
-        OacxParsedToken parsed = omniOneCxClient.parseToken(result.getToken());
-        return processLogin(parsed);
+        return processLogin(identity);
     }
 
     /** Refresh Token으로 새 토큰 쌍을 발급한다 (Refresh Token Rotation) */
@@ -110,8 +105,8 @@ public class AuthService {
      * 신원정보로 로그인을 처리한다.
      * CI 해시로 가입 완료된 기존 회원만 조회한다.
      */
-    private AuthResponse processLogin(OacxParsedToken parsed) {
-        String verifiedCi = parsed.getCi();
+    private AuthResponse processLogin(VerifiedIdentity identity) {
+        String verifiedCi = identity.ci();
         if (verifiedCi == null) {
             log.error("CI not found in parsed token");
             throw new BusinessException(ErrorCode.CI_NOT_FOUND);
@@ -142,17 +137,15 @@ public class AuthService {
      */
     @Transactional
     public SignupIdentityResponse verifyAppForSignup(VerifyRequest request) {
-        OacxResultResponse result = omniOneCxClient.verifyApp(
+        VerifiedIdentity identity = identityVerificationPort.verify(
                 request.provider(), request.token(), request.txId(), request.cxId());
-        ensureVerificationCompleted(result);
-        OacxParsedToken parsed = omniOneCxClient.parseToken(result.getToken());
-        if (parsed.getCi() == null) {
+        if (identity.ci() == null) {
             throw new BusinessException(ErrorCode.CI_NOT_FOUND);
         }
 
-        String ciHash = ciHasher.hash(parsed.getCi());
+        String ciHash = ciHasher.hash(identity.ci());
         Member member = findByCiHash(ciHash).orElseGet(() -> memberRepository.save(
-                Member.create(ciHash, null, parsed.getName(), parsed.getBirth(),
+                Member.create(ciHash, null, identity.name(), identity.birth(),
                         MemberRole.USER, MemberStatus.PENDING)
         ));
         if (member.getStatus() == MemberStatus.ACTIVE) {
@@ -253,20 +246,6 @@ public class AuthService {
             member.promoteToIssuer();
             log.info("Legacy member role promoted to ISSUER - memberId={}", member.getId());
         }
-    }
-
-    /** OmniOne CX 검증 결과 코드를 확인한다 */
-    private void ensureVerificationCompleted(OacxResultResponse result) {
-        String resultCode = result.getResultCode();
-        if ("200".equals(resultCode)) {
-            return;
-        }
-        if ("402".equals(resultCode) || "408".equals(resultCode) || "30020".equals(resultCode)) {
-            throw new BusinessException(ErrorCode.ID_VERIFICATION_PENDING);
-        }
-        log.warn("ID verification failed - resultCode={}, oacxCode={}, message={}",
-                resultCode, result.getOacxCode(), result.getClientMessage());
-        throw new BusinessException(ErrorCode.ID_VERIFICATION_FAILED);
     }
 
     private AuthResponse authResponse(Member member, String accessToken, String refreshToken,

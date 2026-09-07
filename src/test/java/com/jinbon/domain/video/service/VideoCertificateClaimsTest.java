@@ -1,9 +1,9 @@
 package com.jinbon.domain.video.service;
 
 import com.jinbon.domain.video.entity.Video;
+import com.jinbon.domain.video.port.VideoLedgerPort;
 import com.jinbon.global.config.BlockchainProperties;
 import com.jinbon.global.config.OpenDidProperties;
-import com.jinbon.infra.blockchain.OmniOneChainClient;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -18,7 +18,7 @@ class VideoCertificateClaimsTest {
             new OpenDidProperties(true, "issuer", "plan", "ns-jinbon-video-01"),
             new BlockchainProperties("omnione", "100", "rpc", "0xcontract",
                     "wallet", "keystore", "password", "token"),
-            mock(OmniOneChainClient.class)
+            mock(VideoLedgerPort.class)
     );
 
     @Test
@@ -40,7 +40,7 @@ class VideoCertificateClaimsTest {
 
     @Test
     void readsChainIdFromRpcWhenItIsNotConfigured() {
-        OmniOneChainClient chainClient = mock(OmniOneChainClient.class);
+        VideoLedgerPort chainClient = mock(VideoLedgerPort.class);
         when(chainClient.getChainId()).thenReturn("100");
         VideoCertificateClaims claimsWithoutConfiguredChainId = new VideoCertificateClaims(
                 new OpenDidProperties(true, "issuer", "plan", "ns-jinbon-video-01"),

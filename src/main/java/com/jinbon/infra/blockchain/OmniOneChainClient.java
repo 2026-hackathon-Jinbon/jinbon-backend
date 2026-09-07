@@ -1,6 +1,9 @@
 package com.jinbon.infra.blockchain;
 
+import com.jinbon.domain.video.port.VideoLedgerPort;
 import com.jinbon.global.config.BlockchainProperties;
+import com.jinbon.global.error.BusinessException;
+import com.jinbon.global.error.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.http.MediaType;
@@ -19,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * OmniOne Chain (BESU) 블록체인 클라이언트.
@@ -29,11 +33,14 @@ import java.util.Map;
  */
 @Slf4j
 @Component
-public class OmniOneChainClient {
+public class OmniOneChainClient implements VideoLedgerPort {
 
     private final RestClient restClient;
     private final BlockchainProperties properties;
     private final Credentials credentials;
+
+    private static final int RECEIPT_ATTEMPTS = 20;
+    private static final long RECEIPT_INTERVAL_MILLIS = 250;
 
     public OmniOneChainClient(BlockchainProperties properties, ResourceLoader resourceLoader) {
         this.properties = properties;
@@ -47,6 +54,25 @@ public class OmniOneChainClient {
 
         // 트랜잭션 서명용 Keystore 크레덴셜 로드
         this.credentials = loadCredentials(properties, resourceLoader);
+    }
+
+    @Override
+    public Registration register(String merkleRoot, String issuerDid, String signature) {
+        String txHash = sendTransaction(ContractEncoder.encodeRegister(merkleRoot, issuerDid, signature));
+        return new Registration(txHash, waitForBlockNumber(txHash));
+    }
+
+    @Override
+    public void deactivate(String merkleRoot, String issuerDid) {
+        String txHash = sendTransaction(ContractEncoder.encodeDeactivate(merkleRoot, issuerDid));
+        waitForBlockNumber(txHash);
+    }
+
+    @Override
+    public Record getRecord(String merkleRoot) {
+        ContractDecoder.VideoRecord record = ContractDecoder.decodeGetRecord(
+                ethCall(ContractEncoder.encodeGetRecord(merkleRoot)));
+        return new Record(record.registered(), record.active(), record.issuerDid(), record.signature());
     }
 
     /**
@@ -104,9 +130,9 @@ public class OmniOneChainClient {
      * @param data ABI 인코딩된 함수 호출 데이터
      * @return 트랜잭션 해시 (실패 시 null)
      */
-    public String sendTransaction(String data) {
+    private String sendTransaction(String data) {
         if (credentials == null) {
-            throw new RuntimeException("Keystore credentials not loaded");
+            throw new BusinessException(ErrorCode.BLOCKCHAIN_TX_FAILED);
         }
 
         // nonce 조회
@@ -142,11 +168,14 @@ public class OmniOneChainClient {
             @SuppressWarnings("unchecked")
             Map<String, Object> error = (Map<String, Object>) response.get("error");
             log.error("Transaction failed - error={}", error);
-            return null;
+            throw new BusinessException(ErrorCode.BLOCKCHAIN_TX_FAILED);
         }
 
         String txHash = response != null ? (String) response.get("result") : null;
         log.info("Transaction sent successfully - txHash={}", txHash);
+        if (txHash == null) {
+            throw new BusinessException(ErrorCode.BLOCKCHAIN_TX_FAILED);
+        }
         return txHash;
     }
 
@@ -154,7 +183,7 @@ public class OmniOneChainClient {
      * 트랜잭션 영수증을 조회한다.
      * 블록에 포함된 트랜잭션의 실행 결과(blockNumber, status, logs 등)를 반환한다.
      */
-    public Map<String, Object> getTransactionReceipt(String txHash) {
+    private Map<String, Object> getTransactionReceipt(String txHash) {
         log.debug("Fetching transaction receipt - txHash={}", txHash);
 
         Map<String, Object> body = Map.of(
@@ -192,6 +221,7 @@ public class OmniOneChainClient {
     }
 
     /** 현재 연결된 체인의 ID를 조회한다 */
+    @Override
     public String getChainId() {
         Map<String, Object> body = Map.of(
                 "jsonrpc", "2.0",
@@ -203,6 +233,25 @@ public class OmniOneChainClient {
         Map<String, Object> response = post(body);
         String result = response != null ? (String) response.get("result") : "0x1";
         return Numeric.decodeQuantity(result).toString();
+    }
+
+    private String waitForBlockNumber(String txHash) {
+        for (int attempt = 0; attempt < RECEIPT_ATTEMPTS; attempt++) {
+            Map<String, Object> receipt = getTransactionReceipt(txHash);
+            if (receipt != null) {
+                if (!"0x1".equals(receipt.get("status")) || receipt.get("blockNumber") == null) {
+                    throw new BusinessException(ErrorCode.BLOCKCHAIN_TX_FAILED);
+                }
+                return receipt.get("blockNumber").toString();
+            }
+            try {
+                TimeUnit.MILLISECONDS.sleep(RECEIPT_INTERVAL_MILLIS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new BusinessException(ErrorCode.BLOCKCHAIN_TX_FAILED);
+            }
+        }
+        throw new BusinessException(ErrorCode.BLOCKCHAIN_TX_FAILED);
     }
 
     /** JSON-RPC POST 요청을 전송한다 */

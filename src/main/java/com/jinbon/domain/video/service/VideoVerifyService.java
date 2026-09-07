@@ -5,15 +5,13 @@ import tools.jackson.databind.ObjectMapper;
 import com.jinbon.domain.video.dto.VideoVerifyResponse;
 import com.jinbon.domain.video.dto.VerificationVerdict;
 import com.jinbon.domain.video.entity.Video;
+import com.jinbon.domain.video.port.CredentialVerificationPort;
+import com.jinbon.domain.video.port.CredentialVerificationPort.Status;
+import com.jinbon.domain.video.port.VideoLedgerPort;
+import com.jinbon.domain.video.port.VideoSourcePort;
 import com.jinbon.domain.video.repository.VideoRepository;
 import com.jinbon.global.error.BusinessException;
 import com.jinbon.global.error.ErrorCode;
-import com.jinbon.infra.blockchain.ContractEncoder;
-import com.jinbon.infra.blockchain.ContractDecoder;
-import com.jinbon.infra.blockchain.OmniOneChainClient;
-import com.jinbon.infra.download.VideoDownloadService;
-import com.jinbon.infra.opendid.VcVerificationService;
-import com.jinbon.infra.opendid.VcVerificationService.VerificationStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -64,10 +62,10 @@ public class VideoVerifyService {
     private final HashService hashService;
     private final PerceptualHashService perceptualHashService;
     private final SignatureService signatureService;
-    private final OmniOneChainClient omniOneChainClient;
-    private final VcVerificationService vcVerificationService;
+    private final VideoLedgerPort videoLedgerPort;
+    private final CredentialVerificationPort credentialVerificationPort;
     private final VideoCertificateClaims videoCertificateClaims;
-    private final VideoDownloadService videoDownloadService;
+    private final VideoSourcePort videoSourcePort;
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper;
 
@@ -145,7 +143,7 @@ public class VideoVerifyService {
             return cached;
         }
 
-        Path downloadedFile = videoDownloadService.download(url);
+        Path downloadedFile = videoSourcePort.download(url);
         try {
             // 1. fineHash로 정확 매칭 시도
             String fineHash;
@@ -188,7 +186,7 @@ public class VideoVerifyService {
             log.error("Failed to process downloaded video - url={}", url, e);
             throw new BusinessException(ErrorCode.VIDEO_PROCESSING_FAILED);
         } finally {
-            videoDownloadService.cleanup(downloadedFile);
+            videoSourcePort.cleanup(downloadedFile);
         }
     }
 
@@ -226,17 +224,17 @@ public class VideoVerifyService {
         boolean blockchainVerified = blockchainStatus == BlockchainStatus.VERIFIED;
 
         // VC 확인 — Issuer 발급 원장의 활성 상태 + 등록 당시 클레임 스냅샷 일치 여부
-        VerificationStatus vcStatus = verifyVc(video);
-        boolean vcVerified = vcStatus == VerificationStatus.VERIFIED;
+        Status vcStatus = verifyVc(video);
+        boolean vcVerified = vcStatus == Status.VERIFIED;
 
         boolean certificateIssued = video.getVcId() != null;
         boolean vcClaimsBound = certificateIssued && videoCertificateClaims.matchesSnapshot(video);
         boolean certificateMissing = !certificateIssued;
         boolean verificationUnavailable = blockchainStatus == BlockchainStatus.UNAVAILABLE
-                || (certificateIssued && (vcStatus == VerificationStatus.UNAVAILABLE
-                || vcStatus == VerificationStatus.DISABLED));
+                || (certificateIssued && (vcStatus == Status.UNAVAILABLE
+                || vcStatus == Status.DISABLED));
         boolean certificateInvalid = certificateIssued
-                && (vcStatus == VerificationStatus.INVALID || !vcClaimsBound);
+                && (vcStatus == Status.INVALID || !vcClaimsBound);
         boolean authentic = blockchainVerified && vcVerified && vcClaimsBound
                 && !verificationUnavailable && !certificateInvalid;
         VerificationVerdict verdict = verificationUnavailable
@@ -303,10 +301,7 @@ public class VideoVerifyService {
      */
     private BlockchainStatus verifyOnBlockchain(Video video) {
         try {
-            String callData = ContractEncoder.encodeGetRecord(video.getMerkleRoot());
-            String result = omniOneChainClient.ethCall(callData);
-
-            ContractDecoder.VideoRecord record = ContractDecoder.decodeGetRecord(result);
+            VideoLedgerPort.Record record = videoLedgerPort.getRecord(video.getMerkleRoot());
             if (!record.registered() || !record.active()
                     || !video.getIssuerDid().equals(record.issuerDid())) {
                 log.warn("No blockchain record found - videoId={}, merkleRoot={}",
@@ -334,12 +329,12 @@ public class VideoVerifyService {
      * VC의 상태(active/revoked/expired)와 서명 무결성을 검증한다.
      * vcId가 없는 경우(VC 미발급) false를 반환한다.
      */
-    private VerificationStatus verifyVc(Video video) {
+    private Status verifyVc(Video video) {
         if (video.getVcId() == null) {
             log.debug("No VC issued for video - videoId={}", video.getId());
-            return VerificationStatus.DISABLED;
+            return Status.DISABLED;
         }
-        return vcVerificationService.verifyStatus(video.getVcId());
+        return credentialVerificationPort.verify(video.getVcId());
     }
 
     private VideoVerifyResponse getCachedResult(String fineHash) {

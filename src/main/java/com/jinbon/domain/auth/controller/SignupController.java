@@ -5,9 +5,9 @@ import com.jinbon.domain.auth.dto.CompleteSignupRequest;
 import com.jinbon.domain.auth.dto.SignupIdentityResponse;
 import com.jinbon.domain.auth.dto.VerifyRequest;
 import com.jinbon.domain.auth.service.AuthService;
+import com.jinbon.domain.auth.port.IdentityVerificationPort.AppRequest;
+import com.jinbon.domain.auth.port.IdentityVerificationPort.VerificationSession;
 import com.jinbon.global.common.CommonResponse;
-import com.jinbon.infra.omnione.dto.OacxAppResponse;
-import com.jinbon.infra.omnione.dto.OacxTokenResponse;
 import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -25,13 +25,13 @@ public class SignupController {
 
     @PostMapping("/token")
     @Operation(summary = "[STEP 1] 회원가입용 OmniOne CX 토큰 발급")
-    public ResponseEntity<CommonResponse<OacxTokenResponse>> createToken() {
+    public ResponseEntity<CommonResponse<VerificationSession>> createToken() {
         return ResponseEntity.ok(CommonResponse.success(authService.createOacxToken()));
     }
 
     @PostMapping("/app/request")
     @Operation(summary = "[STEP 2] 회원가입용 WebToApp 인증 요청", description = "모바일 신분증 앱을 호출할 딥링크와 cxId를 생성합니다.")
-    public ResponseEntity<CommonResponse<OacxAppResponse>> requestApp(
+    public ResponseEntity<CommonResponse<AppRequest>> requestApp(
             @RequestParam String provider, @RequestParam String token, @RequestParam String txId) {
         return ResponseEntity.ok(CommonResponse.success(authService.requestApp(provider, token, txId)));
     }

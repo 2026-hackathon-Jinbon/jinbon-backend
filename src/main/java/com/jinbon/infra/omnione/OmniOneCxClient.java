@@ -1,5 +1,8 @@
 package com.jinbon.infra.omnione;
 
+import com.jinbon.domain.auth.port.IdentityVerificationPort;
+import com.jinbon.global.error.BusinessException;
+import com.jinbon.global.error.ErrorCode;
 import com.jinbon.infra.omnione.dto.OacxAppResponse;
 import com.jinbon.infra.omnione.dto.OacxParsedToken;
 import com.jinbon.infra.omnione.dto.OacxResultResponse;
@@ -18,20 +21,21 @@ import java.util.Map;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class OmniOneCxClient {
+public class OmniOneCxClient implements IdentityVerificationPort {
 
     private final OmniOneCxApi api;
 
     /** 인증 세션 토큰을 발급한다 */
-    public OacxTokenResponse requestToken() {
+    public VerificationSession createSession() {
         log.info("Requesting OmniOne CX token");
         OacxTokenResponse response = api.requestToken();
         log.info("OmniOne CX token issued - txId={}, resultCode={}", response.getTxId(), response.getResultCode());
-        return response;
+        return new VerificationSession(
+                response.getToken(), response.getTxId(), response.getOacxCode(), response.getResultCode());
     }
 
     /** 모바일 앱 딥링크를 생성한다 (WebToApp 방식) */
-    public OacxAppResponse requestWebToApp(String provider, String token, String txId) {
+    public AppRequest requestApp(String provider, String token, String txId) {
         log.info("Requesting WebToApp deep link - provider={}, txId={}", provider, txId);
 
         Map<String, Object> body = Map.of(
@@ -43,11 +47,13 @@ public class OmniOneCxClient {
 
         OacxAppResponse response = api.requestWebToApp(body);
         log.info("Deep link generated - cxId={}, status={}", response.getCxId(), response.getOacxStatus());
-        return response;
+        return new AppRequest(response.getToken(), response.getCxId(), response.getData(),
+                response.getOacxStatus(), response.getOacxCode(), response.getResultCode(),
+                response.getReqTxId(), response.getClientMessage(), response.getProvider());
     }
 
     /** 모바일 신분증 검증 결과를 조회한다 */
-    public OacxResultResponse verifyApp(String provider, String token, String txId, String cxId) {
+    public VerifiedIdentity verify(String provider, String token, String txId, String cxId) {
         log.info("Verifying app authentication - provider={}, txId={}, cxId={}", provider, txId, cxId);
 
         Map<String, Object> body = Map.of(
@@ -59,15 +65,25 @@ public class OmniOneCxClient {
 
         OacxResultResponse response = api.verifyApp(body);
         log.info("App verification result - resultCode={}, status={}", response.getResultCode(), response.getOacxStatus());
-        return response;
-    }
+        ensureVerificationCompleted(response);
 
-    /** 검증 완료된 토큰에서 신원정보(CI, 이름, 생년월일 등)를 추출한다 */
-    public OacxParsedToken parseToken(String token) {
         log.debug("Parsing verified token for identity info");
-        OacxParsedToken parsed = api.parseToken(Map.of("token", token));
+        OacxParsedToken parsed = api.parseToken(Map.of("token", response.getToken()));
         log.info("Token parsed - name={}, hasCi={}, hasUserDid={}",
                 parsed.getName(), parsed.getCi() != null, parsed.getUserDid() != null);
-        return parsed;
+        return new VerifiedIdentity(parsed.getCi(), parsed.getName(), parsed.getBirth());
+    }
+
+    private void ensureVerificationCompleted(OacxResultResponse result) {
+        String resultCode = result.getResultCode();
+        if ("200".equals(resultCode)) {
+            return;
+        }
+        if ("402".equals(resultCode) || "408".equals(resultCode) || "30020".equals(resultCode)) {
+            throw new BusinessException(ErrorCode.ID_VERIFICATION_PENDING);
+        }
+        log.warn("ID verification failed - resultCode={}, oacxCode={}, message={}",
+                resultCode, result.getOacxCode(), result.getClientMessage());
+        throw new BusinessException(ErrorCode.ID_VERIFICATION_FAILED);
     }
 }

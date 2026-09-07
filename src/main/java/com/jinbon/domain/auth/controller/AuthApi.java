@@ -3,9 +3,9 @@ package com.jinbon.domain.auth.controller;
 import com.jinbon.domain.auth.dto.AuthResponse;
 import com.jinbon.domain.auth.dto.RefreshRequest;
 import com.jinbon.domain.auth.dto.VerifyRequest;
+import com.jinbon.domain.auth.port.IdentityVerificationPort.AppRequest;
+import com.jinbon.domain.auth.port.IdentityVerificationPort.VerificationSession;
 import com.jinbon.global.common.CommonResponse;
-import com.jinbon.infra.omnione.dto.OacxAppResponse;
-import com.jinbon.infra.omnione.dto.OacxTokenResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -47,7 +47,7 @@ public interface AuthApi {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "토큰 발급 성공")
     })
-    ResponseEntity<CommonResponse<OacxTokenResponse>> createToken();
+    ResponseEntity<CommonResponse<VerificationSession>> createToken();
 
     @Operation(
             summary = "[STEP 2] WebToApp 인증 요청",
@@ -65,7 +65,7 @@ public interface AuthApi {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "딥링크 생성 성공")
     })
-    ResponseEntity<CommonResponse<OacxAppResponse>> requestApp(
+    ResponseEntity<CommonResponse<AppRequest>> requestApp(
             @Parameter(description = "인증사 코드 (모바일 운전면허증: comdl)", example = "comdl", required = true)
             String provider,
             @Parameter(description = "STEP 1에서 발급받은 token", required = true)

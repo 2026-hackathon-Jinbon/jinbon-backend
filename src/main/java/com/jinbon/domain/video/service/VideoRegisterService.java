@@ -6,27 +6,24 @@ import com.jinbon.domain.member.repository.MemberRepository;
 import com.jinbon.domain.video.dto.VideoDetailResponse;
 import com.jinbon.domain.video.dto.VideoRegisterResponse;
 import com.jinbon.domain.video.entity.Video;
+import com.jinbon.domain.video.port.CredentialIssuancePort;
+import com.jinbon.domain.video.port.CredentialIssuancePort.Preparation;
+import com.jinbon.domain.video.port.CredentialVerificationPort;
+import com.jinbon.domain.video.port.VideoLedgerPort;
 import com.jinbon.domain.video.repository.VideoRepository;
+import com.jinbon.global.config.OpenDidProperties;
 import com.jinbon.global.error.BusinessException;
 import com.jinbon.global.error.ErrorCode;
-import com.jinbon.global.config.OpenDidProperties;
-import com.jinbon.infra.blockchain.ContractEncoder;
-import com.jinbon.infra.blockchain.ContractDecoder;
-import com.jinbon.infra.blockchain.OmniOneChainClient;
-import com.jinbon.infra.opendid.VcIssuanceService;
-import com.jinbon.infra.opendid.VcIssuanceService.VcIssuancePreparation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.util.Map;
 
 /**
  * 영상 등록/조회/비활성화 서비스.
@@ -50,13 +47,12 @@ public class VideoRegisterService {
     private final HashService hashService;
     private final PerceptualHashService perceptualHashService;
     private final SignatureService signatureService;
-    private final OmniOneChainClient omniOneChainClient;
-    private final VcIssuanceService vcIssuanceService;
+    private final VideoLedgerPort videoLedgerPort;
+    private final CredentialIssuancePort credentialIssuancePort;
     private final VideoCertificateClaims videoCertificateClaims;
-    private final com.jinbon.infra.opendid.VcVerificationService vcVerificationService;
+    private final CredentialVerificationPort credentialVerificationPort;
     private final OpenDidProperties openDidProperties;
     private final VideoVerifyService videoVerifyService;
-    private final RedisTemplate<String, String> redisTemplate;
 
     /**
      * 영상을 등록한다.
@@ -85,7 +81,7 @@ public class VideoRegisterService {
                     || (existing.getMemberId() == null && issuerDid.equals(existing.getIssuerDid()));
             if (sameMember) {
                 log.info("Idempotent video registration - memberId={}, existingVideoId={}", memberId, existing.getId());
-                VcIssuancePreparation preparation = existing.getVcId() == null
+                Preparation preparation = existing.getVcId() == null
                         ? prepareVcIssuance(existing) : null;
                 return toRegisterResponse(existing, true, preparation);
             }
@@ -108,7 +104,7 @@ public class VideoRegisterService {
             if (sameMember) {
                 log.info("Idempotent same-content registration - memberId={}, existingVideoId={}",
                         memberId, contentMatch.getId());
-                VcIssuancePreparation preparation = contentMatch.getVcId() == null
+                Preparation preparation = contentMatch.getVcId() == null
                         ? prepareVcIssuance(contentMatch) : null;
                 return toRegisterResponse(contentMatch, true, preparation);
             }
@@ -137,12 +133,13 @@ public class VideoRegisterService {
         }
 
         // DB 예약에 성공한 단일 요청만 블록체인 기록을 수행한다.
-        String txHash = sendBlockchainTx(ContractEncoder.encodeRegister(merkleRoot, issuerDid, signature));
-        String blockNumber = fetchBlockNumber(txHash);
+        VideoLedgerPort.Registration registration = videoLedgerPort.register(merkleRoot, issuerDid, signature);
+        String txHash = registration.transactionHash();
+        String blockNumber = registration.blockNumber();
         saved.recordBlockchain(blockNumber, txHash);
         log.info("Blockchain recorded - txHash={}, blockNumber={}", txHash, blockNumber);
 
-        VcIssuancePreparation preparation = prepareVcIssuance(saved);
+        Preparation preparation = prepareVcIssuance(saved);
 
         log.info("Video registration completed - videoId={}, txHash={}, blockNumber={}, vcId={}, issuerDid={}",
                 saved.getId(), txHash, blockNumber, saved.getVcId(), issuerDid);
@@ -184,7 +181,7 @@ public class VideoRegisterService {
         log.info("Video deactivation started - videoId={}, merkleRoot={}", videoId, video.getMerkleRoot());
 
         // 블록체인에 비활성화 기록
-        sendBlockchainTx(ContractEncoder.encodeDeactivate(video.getMerkleRoot(), video.getIssuerDid()));
+        videoLedgerPort.deactivate(video.getMerkleRoot(), video.getIssuerDid());
 
         // DB 비활성화 + 검증 캐시 제거
         video.deactivate();
@@ -206,7 +203,7 @@ public class VideoRegisterService {
         if (!videoCertificateClaims.matchesSnapshot(video)) {
             throw new BusinessException(ErrorCode.VC_ISSUANCE_CONTEXT_MISMATCH);
         }
-        if (!vcVerificationService.verify(vcId)) {
+        if (credentialVerificationPort.verify(vcId) != CredentialVerificationPort.Status.VERIFIED) {
             throw new BusinessException(ErrorCode.VC_VERIFICATION_FAILED);
         }
         video.completeVcIssuance(vcId, offerId);
@@ -232,7 +229,7 @@ public class VideoRegisterService {
             return VideoRegisterResponse.from(
                     video, true, video.getVcPlanId(), video.getVcIssuerDid(), video.getVcOfferId());
         }
-        VcIssuancePreparation preparation = prepareVcIssuance(video);
+        Preparation preparation = prepareVcIssuance(video);
         if (preparation == null) {
             throw new BusinessException(ErrorCode.VC_ISSUANCE_FAILED);
         }
@@ -251,7 +248,7 @@ public class VideoRegisterService {
             throw new BusinessException(ErrorCode.VC_ISSUANCE_CONTEXT_MISMATCH);
         }
         VideoCertificateClaims.Draft certificate = videoCertificateClaims.create(video);
-        vcIssuanceService.syncHolderPii(video.getIssuerDid(), certificate.claims());
+        credentialIssuancePort.syncHolder(video.getIssuerDid(), certificate.claims());
         log.info("Issuer holder PII synchronized - videoId={}, memberId={}, holderDid={}",
                 videoId, memberId, video.getIssuerDid());
     }
@@ -325,51 +322,17 @@ public class VideoRegisterService {
         return null;
     }
 
-    /** 블록체인 트랜잭션을 전송하고 txHash를 반환한다 (실패 시 예외) */
-    private String sendBlockchainTx(String data) {
-        String txHash = omniOneChainClient.sendTransaction(data);
-        if (txHash == null) {
-            log.error("Blockchain transaction returned null");
-            throw new BusinessException(ErrorCode.BLOCKCHAIN_TX_FAILED);
-        }
-        return txHash;
-    }
-
-    /** 트랜잭션 영수증에서 블록 번호를 추출한다 */
-    private String fetchBlockNumber(String txHash) {
-        for (int attempt = 0; attempt < 20; attempt++) {
-            Map<String, Object> receipt = omniOneChainClient.getTransactionReceipt(txHash);
-            if (receipt != null) {
-                if (!"0x1".equals(receipt.get("status"))) {
-                    throw new BusinessException(ErrorCode.BLOCKCHAIN_TX_FAILED);
-                }
-                Object blockNumber = receipt.get("blockNumber");
-                if (blockNumber == null) {
-                    throw new BusinessException(ErrorCode.BLOCKCHAIN_TX_FAILED);
-                }
-                return blockNumber.toString();
-            }
-            try {
-                Thread.sleep(250);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new BusinessException(ErrorCode.BLOCKCHAIN_TX_FAILED);
-            }
-        }
-        throw new BusinessException(ErrorCode.BLOCKCHAIN_TX_FAILED);
-    }
-
-    private VcIssuancePreparation prepareVcIssuance(Video video) {
+    private Preparation prepareVcIssuance(Video video) {
         try {
             verifyBlockchainEvidence(video);
             VideoCertificateClaims.Draft certificate = videoCertificateClaims.create(video);
-            VcIssuancePreparation preparation = vcIssuanceService.prepareVideoVc(
+            Preparation preparation = credentialIssuancePort.prepare(
                     video.getIssuerDid(),
                     certificate.claims()
             );
             if (preparation != null) {
                 video.markVcPending(
-                        preparation.offerId(), preparation.vcPlanId(), preparation.issuerDid(),
+                        preparation.offerId(), preparation.planId(), preparation.issuerDid(),
                         certificate.snapshotHash(preparation.issuerDid()),
                         VideoCertificateClaims.SCHEMA_VERSION,
                         VideoCertificateClaims.ASSURANCE_TYPE);
@@ -384,9 +347,7 @@ public class VideoRegisterService {
 
     /** VC에는 receipt뿐 아니라 현재 온체인 레코드와 일치하는 확정 증거만 담는다. */
     private void verifyBlockchainEvidence(Video video) {
-        String result = omniOneChainClient.ethCall(
-                ContractEncoder.encodeGetRecord(video.getMerkleRoot()));
-        ContractDecoder.VideoRecord record = ContractDecoder.decodeGetRecord(result);
+        VideoLedgerPort.Record record = videoLedgerPort.getRecord(video.getMerkleRoot());
         if (!record.registered() || !record.active()
                 || !video.getIssuerDid().equals(record.issuerDid())
                 || !video.getSignature().equals(record.signature())) {
@@ -397,11 +358,11 @@ public class VideoRegisterService {
     private VideoRegisterResponse toRegisterResponse(
             Video video,
             boolean alreadyRegistered,
-            VcIssuancePreparation preparation
+            Preparation preparation
     ) {
         return VideoRegisterResponse.from(
                 video, alreadyRegistered,
-                preparation != null ? preparation.vcPlanId() : null,
+                preparation != null ? preparation.planId() : null,
                 preparation != null ? preparation.issuerDid() : null,
                 preparation != null ? preparation.offerId() : null
         );

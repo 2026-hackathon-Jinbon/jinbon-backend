@@ -1,6 +1,7 @@
 package com.jinbon.infra.opendid;
 
 import com.jinbon.global.config.OpenDidProperties;
+import com.jinbon.domain.video.port.CredentialVerificationPort.Status;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,9 +20,7 @@ class VcVerificationServiceTest {
 
         VcVerificationService service = new VcVerificationService(client, properties);
 
-        assertThat(service.verify("arbitrary-vc")).isFalse();
-        assertThat(service.verifyStatus("arbitrary-vc"))
-                .isEqualTo(VcVerificationService.VerificationStatus.DISABLED);
+        assertThat(service.verify("arbitrary-vc")).isEqualTo(Status.DISABLED);
         verifyNoInteractions(client);
     }
 
@@ -35,8 +34,7 @@ class VcVerificationServiceTest {
 
         VcVerificationService service = new VcVerificationService(client, properties);
 
-        assertThat(service.verifyStatus("vc-1"))
-                .isEqualTo(VcVerificationService.VerificationStatus.UNAVAILABLE);
+        assertThat(service.verify("vc-1")).isEqualTo(Status.UNAVAILABLE);
     }
 
     @Test
@@ -48,8 +46,7 @@ class VcVerificationServiceTest {
 
         VcVerificationService service = new VcVerificationService(client, properties);
 
-        assertThat(service.verifyStatus("vc-1"))
-                .isEqualTo(VcVerificationService.VerificationStatus.VERIFIED);
+        assertThat(service.verify("vc-1")).isEqualTo(Status.VERIFIED);
     }
 
     @Test
@@ -60,7 +57,6 @@ class VcVerificationServiceTest {
 
         VcVerificationService service = new VcVerificationService(client, properties);
 
-        assertThat(service.verifyStatus("vc-1"))
-                .isEqualTo(VcVerificationService.VerificationStatus.INVALID);
+        assertThat(service.verify("vc-1")).isEqualTo(Status.INVALID);
     }
 }
