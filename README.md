@@ -36,7 +36,8 @@
         → Holder DID와 Merkle Root, 체인·컨트랙트·트랜잭션 증거를 Issuer에 등록
         → 진본 Issuer가 "블록체인 등록 사실"을 보증하는 발급 Offer 생성
         → 앱이 Wallet 프로토콜로 사용자 동의·PIN 인증 후 VC 수령 및 저장
-        → 발급 완료 API로 vcId를 서버 영상 정보에 연결
+        → 발급 완료 API로 vcId 제출
+        → 서버가 VC 상태·issuer/subject DID·영상 블록체인 claim을 검증한 뒤 연결
 ```
 
 영상 등록과 VC 발급은 별도 단계입니다. 영상의 블록체인 등록이 완료되면 VC 발급을 취소하거나 일시적으로 실패해도 영상 등록 결과는 유지되며, 이후 Wallet에서 다시 발급받을 수 있습니다.
@@ -72,7 +73,7 @@ CI 원문은 저장하지 않습니다. 인증 직후 서버 전용 비밀키로
   │     → 서명 재계산 결과와 온체인 데이터 비교 → 무결성 확인
   │
   ├─ 4. [선택과제 1] Open DID VC 검증
-  │     → VC의 발급 기관, 발급 시점, 유효성 확인 → 신뢰성 확인
+  │     → VC 상태(ACTIVE), issuer/subject DID, 영상 commitment·트랜잭션 claim 일치 확인
   │
   └─ 5. 진본 판정 + 검증 결과 캐싱 (TTL 10분)
 ```
@@ -95,8 +96,8 @@ CI 원문은 저장하지 않습니다. 인증 직후 서버 전용 비밀키로
 | 역할 | **진본 Issuer가 "누가, 언제, 어떤 온체인 기록으로 이 영상을 등록했는가"를 확인했다는 증명** |
 | 구성 | Open DID Orchestrator로 TAS, Issuer, Verifier, CA, Wallet, API 서버 일괄 관리 |
 | 블록체인 | Hyperledger Besu (로컬 Docker) — DID Document 앵커링용 |
-| VC 발급 흐름 | 백엔드가 Holder/Claim 등록 및 발급 Offer 생성 → 앱 Wallet이 offerId로 사용자 동의·PIN 인증 → issue-vc → confirm → 로컬 저장 → 백엔드에 vcId 연결 |
-| 검증 시 | VC 상태(ACTIVE)와 Verifier의 서명·무결성 검증 결과 확인 |
+| VC 발급 흐름 | 백엔드가 Holder/Claim 등록 및 발급 Offer 생성 → 앱 Wallet이 offerId로 사용자 동의·PIN 인증 → issue-vc → confirm → 로컬 저장 → 백엔드에 vcId 제출 및 claim 결속 검증 |
+| 검증 시 | VC 상태(ACTIVE), 발급 기관·등록자 DID, 영상 commitment·온체인 claim 결속 확인 |
 
 ### 선택과제 2: OmniOne Chain
 
@@ -136,6 +137,7 @@ src/main/java/com/jinbon/
 │   ├── auth/              # 인증 (OmniOne CX + JWT)
 │   │   ├── controller/
 │   │   ├── dto/
+│   │   ├── port/          # 외부 인증·토큰 저장소 경계
 │   │   └── service/
 │   ├── member/            # 회원 관리
 │   │   ├── entity/
@@ -144,16 +146,18 @@ src/main/java/com/jinbon/
 │       ├── controller/
 │       ├── dto/
 │       ├── entity/
+│       ├── port/          # VC·블록체인·캐시 외부 연동 경계
 │       ├── repository/
 │       └── service/
 ├── global/                # 공통
 │   ├── common/            #   응답 포맷
-│   ├── config/            #   Security, Redis, JWT Filter
+│   ├── config/            #   Security, JWT Filter, 외부 연동 설정
 │   └── error/             #   예외 처리
 └── infra/                 # 외부 연동
     ├── omnione/           #   OmniOne CX 클라이언트
     ├── opendid/           #   Open DID Issuer 연동 + Wallet VC 발급 준비/검증
-    └── blockchain/        #   OmniOne Chain 클라이언트
+    ├── blockchain/        #   OmniOne Chain 클라이언트
+    └── redis/              #   Redis 설정·토큰 저장소·검증 캐시
 ```
 
 ## 인프라 구성
