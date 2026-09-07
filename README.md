@@ -4,26 +4,6 @@
 
 > 2026 블록체인 & AI 해커톤 - Track 2 (MVP 개발)
 
-## 적용 전 필수 작업
-
-다음 항목은 코드에는 반영되었지만 배포 환경에는 별도 적용이 필요합니다.
-
-- [ ] `contracts/JinBon.sol` 신규 배포
-  - 접근 제어와 온체인 signature 조회가 추가되어 기존 컨트랙트 ABI와 호환되지 않습니다.
-  - 배포 완료 후 `.env`의 `CONTRACT_ADDRESS`를 새 주소로 변경해야 합니다.
-- [ ] 백엔드 블록체인 지갑 확인
-  - `register`와 `deactivate`는 컨트랙트 배포 지갑만 호출할 수 있습니다.
-  - `WALLET_ADDRESS`와 `src/main/resources/keystore/omnione-chain-keystore.json`은 컨트랙트를 배포한 동일 지갑이어야 합니다.
-- [ ] VC 완료 API 호출부 수정
-  - `POST /api/videos/{id}/vc/complete` 요청에 영상 등록 응답으로 받은 `offerId`를 함께 전달해야 합니다.
-
-```json
-{
-  "vcId": "vc-abc123",
-  "offerId": "offer-abc123"
-}
-```
-
 ## 서비스 개요
 
 **진본**은 영상 콘텐츠의 원본 여부를 블록체인과 DID 기술로 증명하는 플랫폼입니다.
@@ -132,7 +112,7 @@ CI 원문은 저장하지 않습니다. 인증 직후 서버 전용 비밀키로
 
 ### 두 과제의 조합
 
-![시스템 구성도](docs/jinbon_selection_task.png)
+![시스템 구성도](docs/PPT/jinbon_selection_task.png.png)
 
 ## 기술 스택
 
