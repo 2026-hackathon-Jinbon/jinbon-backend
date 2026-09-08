@@ -6,7 +6,8 @@ import java.time.LocalDateTime;
 
 @Schema(description = "영상 검증 결과 응답")
 public record VideoVerifyResponse(
-        @Schema(description = "구조화된 검증 판정") VerificationVerdict verdict,
+        @Schema(description = "내부 검증 판정 (로그·디버깅용)") VerificationVerdict verdict,
+        @Schema(description = "클라이언트 표시용 상태") DisplayStatus displayStatus,
         @Schema(description = "지각해시 평균 해밍 거리. 유사 일치에서만 제공", nullable = true)
         Double similarityDistance,
         @Schema(description = "진본 여부", example = "true") boolean authentic,
@@ -21,15 +22,25 @@ public record VideoVerifyResponse(
         @Schema(description = "판정 해석 시 주의사항", nullable = true) String notice
 ) {
 
+    public static VideoVerifyResponse of(VerificationVerdict verdict, Double similarityDistance,
+                                          boolean authentic, Long videoId, String issuerDid,
+                                          LocalDateTime registeredAt, boolean blockchainVerified,
+                                          boolean vcVerified, boolean vcClaimsBound, boolean active,
+                                          String message, String notice) {
+        return new VideoVerifyResponse(verdict, verdict.toDisplayStatus(), similarityDistance,
+                authentic, videoId, issuerDid, registeredAt, blockchainVerified, vcVerified,
+                vcClaimsBound, active, message, notice);
+    }
+
     public static VideoVerifyResponse notRegistered() {
-        return new VideoVerifyResponse(VerificationVerdict.NOT_REGISTERED, null,
+        return of(VerificationVerdict.NOT_REGISTERED, null,
                 false, null, null, null, false, false, false, false,
                 "진본에 등록된 기록을 찾지 못했습니다.",
                 "미등록은 영상이 조작되었다는 의미가 아닙니다.");
     }
 
     public static VideoVerifyResponse deactivated(Long videoId, String issuerDid, LocalDateTime registeredAt) {
-        return new VideoVerifyResponse(VerificationVerdict.REGISTERED_BUT_REVOKED, null,
+        return of(VerificationVerdict.REGISTERED_BUT_REVOKED, null,
                 false, videoId, issuerDid, registeredAt, false, false, false, false,
                 "등록 후 비활성화된 영상입니다.", null);
     }

@@ -258,7 +258,7 @@ public class VideoVerifyService {
         log.info("Video verification completed - videoId={}, authentic={}, blockchainVerified={}, vcVerified={}",
                 video.getId(), authentic, blockchainVerified, vcVerified);
 
-        return new VideoVerifyResponse(verdict, similarityDistance, authentic,
+        return VideoVerifyResponse.of(verdict, similarityDistance, authentic,
                 video.getId(), video.getIssuerDid(), video.getRegisteredAt(),
                 blockchainVerified, vcVerified, vcClaimsBound, true, message, notice);
     }
