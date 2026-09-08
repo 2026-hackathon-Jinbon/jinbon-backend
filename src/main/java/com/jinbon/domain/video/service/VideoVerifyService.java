@@ -324,7 +324,9 @@ public class VideoVerifyService {
             log.debug("No VC issued for video - videoId={}", video.getId());
             return VerificationResult.disabled();
         }
-        return credentialVerificationPort.verify(video.getVcId());
+        return video.getVcCredential() == null
+                ? credentialVerificationPort.verify(video.getVcId())
+                : credentialVerificationPort.verify(video.getVcId(), video.getVcCredential());
     }
 
     private String generateFineHash(MultipartFile file) {

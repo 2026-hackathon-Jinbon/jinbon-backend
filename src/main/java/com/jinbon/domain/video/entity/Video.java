@@ -75,6 +75,10 @@ public class Video {
     /** Verifiable Credential 식별자 (Open DID Issuer가 발급) */
     private String vcId;
 
+    /** Wallet에서 전달받아 서명 검증을 통과한 VC JSON 원문 */
+    @Column(columnDefinition = "TEXT")
+    private String vcCredential;
+
     /** 이 영상의 Wallet VC 발급 준비 과정에서 생성된 1회성 Offer ID */
     private String vcOfferId;
 
@@ -149,7 +153,7 @@ public class Video {
      *
      * @throws BusinessException PENDING_WALLET 상태가 아닌 경우
      */
-    public void completeVcIssuance(String vcId, String offerId) {
+    public void completeVcIssuance(String vcId, String offerId, String credential) {
         if (this.vcIssuanceStatus != VcIssuanceStatus.PENDING_WALLET) {
             throw new BusinessException(ErrorCode.VC_ISSUANCE_NOT_PREPARED);
         }
@@ -157,6 +161,7 @@ public class Video {
             throw new BusinessException(ErrorCode.VC_ISSUANCE_CONTEXT_MISMATCH);
         }
         this.vcId = vcId;
+        this.vcCredential = credential;
         this.vcIssuanceStatus = VcIssuanceStatus.ISSUED;
     }
 

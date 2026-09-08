@@ -38,26 +38,30 @@
         .brand-name { font-size: 17px; font-weight: 800; letter-spacing: -.4px; }
         .brand-caption { margin-top: 2px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .8px; }
         .hero { margin-bottom: 24px; }
-        .eyebrow { color: var(--blue); font-size: 12px; font-weight: 800; letter-spacing: .7px; margin-bottom: 10px; }
+        .eyebrow {
+            display: inline-flex; align-items: center; min-height: 28px; margin-bottom: 14px; padding: 6px 11px;
+            border-radius: 999px; color: var(--blue); background: var(--blue-soft);
+            font-size: 11px; font-weight: 800; letter-spacing: -.1px;
+        }
         h1 { font-size: 29px; line-height: 1.28; letter-spacing: -1.1px; margin-bottom: 11px; }
         .hero p { color: var(--muted); font-size: 15px; line-height: 1.65; letter-spacing: -.25px; }
         .card {
             background: #fff; border: 1px solid rgba(229, 233, 242, .8); border-radius: 24px;
-            padding: 22px; box-shadow: 0 14px 40px rgba(16, 27, 54, .07);
+            padding: 26px; box-shadow: 0 14px 40px rgba(16, 27, 54, .07);
         }
-        .identity-row { display: flex; gap: 14px; align-items: center; margin-bottom: 22px; }
+        .identity-row { display: flex; gap: 18px; align-items: center; min-height: 92px; margin-bottom: 24px; }
         .identity-icon {
-            position: relative; flex: 0 0 52px; width: 52px; height: 52px; border-radius: 17px;
+            position: relative; flex: 0 0 72px; width: 72px; height: 72px; border-radius: 22px;
             background: var(--blue-soft);
         }
         .identity-icon::before {
-            content: ""; position: absolute; width: 18px; height: 22px; left: 17px; top: 13px;
-            border: 2px solid var(--blue); border-radius: 5px;
+            content: ""; position: absolute; width: 25px; height: 31px; left: 23px; top: 18px;
+            border: 2.5px solid var(--blue); border-radius: 7px;
         }
         .identity-icon::after {
-            content: "✓"; position: absolute; right: 6px; bottom: 5px; width: 17px; height: 17px;
+            content: "✓"; position: absolute; right: 7px; bottom: 6px; width: 23px; height: 23px;
             color: #fff; background: var(--blue); border: 2px solid #fff; border-radius: 50%;
-            font-size: 10px; line-height: 17px; text-align: center; font-weight: 900;
+            font-size: 12px; line-height: 21px; text-align: center; font-weight: 900;
         }
         .identity-title { font-size: 16px; font-weight: 750; margin-bottom: 5px; }
         .identity-detail { color: var(--muted); font-size: 12px; line-height: 1.45; }
@@ -96,7 +100,8 @@
             .brand { margin-bottom: 20px; }
             .hero { margin-bottom: 16px; }
             h1 { font-size: 25px; }
-            .card { padding: 18px; }
+            .card { padding: 20px; }
+            .identity-row { min-height: 80px; margin-bottom: 20px; }
         }
     </style>
 </head>
@@ -108,7 +113,7 @@
         </header>
 
         <section class="hero">
-            <div class="eyebrow" id="pageEyebrow">SECURE ID VERIFICATION</div>
+            <div class="eyebrow" id="pageEyebrow">본인 확인</div>
             <h1 id="pageTitle">모바일 신분증으로<br>안전하게 확인할게요</h1>
         </section>
 
@@ -145,11 +150,10 @@
         let authCompleted = false;
 
         if (mode === 'signup') {
-            document.getElementById('pageEyebrow').textContent = 'CREATE YOUR JINBON ID';
-            document.getElementById('pageTitle').innerHTML = '회원가입 전,<br>본인인지 확인할게요';
-            document.getElementById('pageDescription').innerHTML = '확인이 끝나면 이 기기에 안전한 DID를 만들고<br>진본 등록자 계정을 완성합니다.';
+            document.getElementById('pageEyebrow').textContent = '회원가입 · 1단계';
+            document.getElementById('pageTitle').innerHTML = '안전한 회원가입을 위해<br>본인 확인을 진행할게요';
         } else {
-            document.getElementById('pageEyebrow').textContent = 'WELCOME BACK';
+            document.getElementById('pageEyebrow').textContent = '로그인';
             document.getElementById('pageTitle').innerHTML = '모바일 신분증으로<br>안전하게 로그인해요';
         }
 
@@ -256,6 +260,16 @@
             }
         }
 
+        function verificationErrorMessage(code) {
+            if (mode === 'signup' && code === 'M002') {
+                return '이미 가입된 회원입니다. 로그인해주세요.';
+            }
+            if (mode === 'login' && code === 'M001') {
+                return '가입된 계정을 찾지 못했습니다. 회원가입을 먼저 진행해주세요.';
+            }
+            return '본인확인을 완료하지 못했습니다. 다시 시도해주세요.';
+        }
+
         function startPolling() {
             stopPolling();
             let attempts = 0;
@@ -277,7 +291,7 @@
                 } catch (e) {
                     if (e.code !== 'A007') {
                         stopPolling();
-                        setStatus(e.code === 'M001' ? '가입된 계정을 찾지 못했습니다. 회원가입을 먼저 진행해주세요.' : '본인확인을 완료하지 못했습니다. 다시 시도해주세요.', 'error');
+                        setStatus(verificationErrorMessage(e.code), 'error');
                         resetButton();
                         return;
                     }

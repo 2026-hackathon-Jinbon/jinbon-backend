@@ -76,7 +76,8 @@ public class VideoRegisterController implements VideoRegisterApi {
             Authentication authentication
     ) {
         Long memberId = Long.parseLong(authentication.getName());
-        videoRegisterService.completeVcIssuance(videoId, memberId, request.vcId(), request.offerId());
+        videoRegisterService.completeVcIssuance(
+                videoId, memberId, request.vcId(), request.offerId(), request.credential());
         return ResponseEntity.ok(CommonResponse.success(null));
     }
 

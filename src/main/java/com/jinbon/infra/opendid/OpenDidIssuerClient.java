@@ -50,6 +50,20 @@ public class OpenDidIssuerClient {
         return IssuedVc.from(issuedVc, objectMapper);
     }
 
+    public IssuerDocument getIssuerDocument() {
+        Map<String, Object> issuerInfo = api.getIssuerInfo();
+        Object did = issuerInfo.get("did");
+        Object didDocument = issuerInfo.get("didDocument");
+        if (did == null || didDocument == null) {
+            throw new IllegalStateException("Issuer response is missing DID document");
+        }
+        try {
+            return new IssuerDocument(did.toString(), objectMapper.writeValueAsString(didDocument));
+        } catch (JacksonException e) {
+            throw new IllegalStateException("Failed to serialize issuer DID document", e);
+        }
+    }
+
     public void prepareHolder(String holderDid, String pii, Map<String, Object> claims) {
         // Issuer 2.0.0은 vcPlanId 검색 필터가 일치하는 Plan도 빈 목록으로 반환할 수 있어
         // 전체 목록에서 정확한 Plan ID를 직접 찾는다.
@@ -127,7 +141,7 @@ public class OpenDidIssuerClient {
             }
 
             Map<String, Object> claims = extractClaims(issuedVc, objectMapper);
-            String subjectDid = firstText(issuedVc, "subjectDid", "holderDid");
+            String subjectDid = firstText(issuedVc, "subjectDid", "holderDid", "did");
             Object subject = issuedVc.get("credentialSubject");
             if (subject instanceof Map<?, ?> subjectMap) {
                 Map<String, Object> values = (Map<String, Object>) subjectMap;
@@ -179,5 +193,7 @@ public class OpenDidIssuerClient {
             return null;
         }
     }
+
+    public record IssuerDocument(String did, String json) {}
 
 }

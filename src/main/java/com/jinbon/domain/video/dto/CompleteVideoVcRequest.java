@@ -15,6 +15,11 @@ public record CompleteVideoVcRequest(
                 example = "offer-abc123", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank
         @Size(max = 500, message = "offerId must be 500 characters or less")
-        String offerId
+        String offerId,
+        @Schema(description = "Wallet에 저장된 서명 포함 VC JSON 원문",
+                requiredMode = Schema.RequiredMode.REQUIRED)
+        @NotBlank
+        @Size(max = 100000, message = "credential must be 100000 characters or less")
+        String credential
 ) {
 }

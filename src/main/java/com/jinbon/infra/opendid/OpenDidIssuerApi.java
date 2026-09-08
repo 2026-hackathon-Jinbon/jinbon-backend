@@ -23,6 +23,9 @@ public interface OpenDidIssuerApi {
                                         @RequestParam("searchValue") String searchValue,
                                         @RequestParam("size") int size);
 
+    @GetExchange("/issuer/admin/v1/issuer/info")
+    Map<String, Object> getIssuerInfo();
+
     @PostExchange("/issuer/admin/v1/users/demo")
     void registerHolder(@RequestBody Map<String, Object> body);
 

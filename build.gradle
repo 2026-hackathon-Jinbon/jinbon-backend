@@ -24,6 +24,8 @@ repositories {
 }
 
 dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+
     // Spring Boot Starters
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
@@ -44,6 +46,8 @@ dependencies {
 
     // Web3j (OmniOne Chain / BESU 연동)
     implementation 'org.web3j:core:4.12.3'
+    implementation 'com.google.code.gson:gson:2.11.0'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
 
     // JavaCV (영상 프레임 추출 + 지각해시)
     implementation 'org.bytedeco:javacv-platform:1.5.11'

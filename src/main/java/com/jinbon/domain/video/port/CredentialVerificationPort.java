@@ -7,6 +7,8 @@ public interface CredentialVerificationPort {
 
     VerificationResult verify(String credentialId);
 
+    VerificationResult verify(String credentialId, String credentialJson);
+
     record VerificationResult(Status status, String issuerDid, String subjectDid,
                                Map<String, Object> claims) {
         public static VerificationResult unavailable() {

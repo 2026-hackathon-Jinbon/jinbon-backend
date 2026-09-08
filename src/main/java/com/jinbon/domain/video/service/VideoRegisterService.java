@@ -192,7 +192,8 @@ public class VideoRegisterService {
     }
 
     @Transactional
-    public void completeVcIssuance(Long videoId, Long memberId, String vcId, String offerId) {
+    public void completeVcIssuance(Long videoId, Long memberId, String vcId, String offerId,
+                                   String credential) {
         if (!openDidProperties.isEnabled()) {
             throw new BusinessException(ErrorCode.VC_FEATURE_DISABLED);
         }
@@ -204,11 +205,11 @@ public class VideoRegisterService {
         if (!videoCertificateClaims.matchesSnapshot(video)) {
             throw new BusinessException(ErrorCode.VC_ISSUANCE_CONTEXT_MISMATCH);
         }
-        VerificationResult verification = credentialVerificationPort.verify(vcId);
+        VerificationResult verification = credentialVerificationPort.verify(vcId, credential);
         if (!videoCertificateClaims.matchesCredential(video, verification)) {
             throw new BusinessException(ErrorCode.VC_VERIFICATION_FAILED);
         }
-        video.completeVcIssuance(vcId, offerId);
+        video.completeVcIssuance(vcId, offerId, credential);
         videoVerifyService.evictCache(video);
         log.info("Wallet VC issuance confirmed - videoId={}, memberId={}, vcId={}", videoId, memberId, vcId);
     }

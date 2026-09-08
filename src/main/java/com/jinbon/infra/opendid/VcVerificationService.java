@@ -4,7 +4,14 @@ import com.jinbon.domain.video.port.CredentialVerificationPort;
 import com.jinbon.domain.video.port.CredentialVerificationPort.VerificationResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.omnione.did.core.manager.VcManager;
+import org.omnione.did.data.model.did.DidDocument;
+import org.omnione.did.data.model.vc.Claim;
+import org.omnione.did.data.model.vc.VerifiableCredential;
 import org.springframework.stereotype.Service;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Open DID Issuer 발급 원장에서 VC 상태와 발급 claim을 확인하는 서비스.
@@ -49,6 +56,52 @@ public class VcVerificationService implements CredentialVerificationPort {
 
         } catch (Exception e) {
             log.warn("VC verification failed - vcId={}, reason={}", vcId, e.getMessage());
+            return VerificationResult.unavailable();
+        }
+    }
+
+    @Override
+    public VerificationResult verify(String vcId, String credentialJson) {
+        if (!openDidProperties.isEnabled()) {
+            return VerificationResult.disabled();
+        }
+
+        try {
+            OpenDidIssuerClient.IssuedVc issuedVc = issuerClient.getIssuedVc(vcId);
+            if (issuedVc == null || !STATUS_ACTIVE.equalsIgnoreCase(issuedVc.status())) {
+                return VerificationResult.invalid();
+            }
+
+            OpenDidIssuerClient.IssuerDocument issuerDocument = issuerClient.getIssuerDocument();
+            try {
+                VerifiableCredential credential = new VerifiableCredential();
+                credential.fromJson(credentialJson);
+                if (!vcId.equals(credential.getId())
+                        || credential.getIssuer() == null
+                        || !issuerDocument.did().equals(credential.getIssuer().getId())
+                        || credential.getCredentialSubject() == null
+                        || !issuedVc.subjectDid().equals(credential.getCredentialSubject().getId())) {
+                    return VerificationResult.invalid();
+                }
+
+                DidDocument didDocument = new DidDocument();
+                didDocument.fromJson(issuerDocument.json());
+                new VcManager().verifyCredential(credential, didDocument, true);
+
+                Map<String, Object> claims = new LinkedHashMap<>();
+                if (credential.getCredentialSubject().getClaims() != null) {
+                    for (Claim claim : credential.getCredentialSubject().getClaims()) {
+                        claims.put(claim.getCode(), claim.getValue());
+                    }
+                }
+                return new VerificationResult(Status.VERIFIED, credential.getIssuer().getId(),
+                        credential.getCredentialSubject().getId(), Map.copyOf(claims));
+            } catch (Exception e) {
+                log.warn("Submitted VC is invalid - vcId={}, reason={}", vcId, e.getMessage());
+                return VerificationResult.invalid();
+            }
+        } catch (Exception e) {
+            log.warn("VC verification service is unavailable - vcId={}, reason={}", vcId, e.getMessage());
             return VerificationResult.unavailable();
         }
     }

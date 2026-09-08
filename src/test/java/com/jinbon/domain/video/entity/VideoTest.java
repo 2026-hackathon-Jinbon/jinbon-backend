@@ -14,9 +14,10 @@ class VideoTest {
         video.markVcPending("offer-1", "plan-1", "did:omn:issuer",
                 "snapshot", 1, "BLOCKCHAIN_REGISTRATION");
 
-        video.completeVcIssuance("vc-1", "offer-1");
+        video.completeVcIssuance("vc-1", "offer-1", "{\"id\":\"vc-1\"}");
 
         assertThat(video.getVcId()).isEqualTo("vc-1");
+        assertThat(video.getVcCredential()).isEqualTo("{\"id\":\"vc-1\"}");
         assertThat(video.getVcIssuanceStatus()).isEqualTo(VcIssuanceStatus.ISSUED);
     }
 
@@ -26,7 +27,8 @@ class VideoTest {
         video.markVcPending("offer-1", "plan-1", "did:omn:issuer",
                 "snapshot", 1, "BLOCKCHAIN_REGISTRATION");
 
-        assertThatThrownBy(() -> video.completeVcIssuance("vc-1", "offer-2"))
+        assertThatThrownBy(() -> video.completeVcIssuance(
+                "vc-1", "offer-2", "{\"id\":\"vc-1\"}"))
                 .isInstanceOf(BusinessException.class)
                 .extracting("code")
                 .isEqualTo("D005");
