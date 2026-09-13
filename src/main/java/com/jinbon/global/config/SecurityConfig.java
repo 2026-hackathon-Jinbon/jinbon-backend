@@ -58,6 +58,7 @@ public class SecurityConfig {
                     auth.requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/signup/**").permitAll()
                         .requestMatchers("/api/verify/**").permitAll()
+                        .requestMatchers("/api/kakao/skill/**").permitAll()
                         .requestMatchers("/health").permitAll()
                         .requestMatchers("/favicon.ico").permitAll();
 

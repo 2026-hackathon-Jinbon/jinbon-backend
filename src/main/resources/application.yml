@@ -12,8 +12,8 @@ spring:
 
   # PostgreSQL
   datasource:
-    url: jdbc:postgresql://localhost:${DB_PORT:5432}/jinbon
-    username: jinbon
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:jinbon}
+    username: ${DB_USER:jinbon}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
 
