@@ -21,8 +21,8 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class RedisVerificationCache implements VerificationCache {
 
-    private static final String RESULT_KEY_PREFIX = "verify:v2:result:";
-    private static final String VIDEO_INDEX_KEY_PREFIX = "verify:v2:video:";
+    private static final String RESULT_KEY_PREFIX = "verify:v3:result:";
+    private static final String VIDEO_INDEX_KEY_PREFIX = "verify:v3:video:";
     private static final Duration TTL = Duration.ofMinutes(10);
 
     private final RedisTemplate<String, String> redisTemplate;
@@ -50,7 +50,10 @@ public class RedisVerificationCache implements VerificationCache {
 
     @Override
     public void put(String key, VideoVerifyResponse result) {
-        if (result.verdict() == VerificationVerdict.VERIFICATION_UNAVAILABLE) {
+        // 등록 데이터가 늘면 미등록/유사 후보가 바뀌므로 다시 검색한다.
+        if (result.verdict() == VerificationVerdict.VERIFICATION_UNAVAILABLE
+                || result.verdict() == VerificationVerdict.NOT_REGISTERED
+                || result.similarityDistance() != null) {
             return;
         }
         try {

@@ -29,13 +29,11 @@ class VideoVerifyResponseTest {
     }
 
     @Test
-    void authenticatedVerdictsMapsToAuthenticatedDisplayStatus() {
-        for (VerificationVerdict v : new VerificationVerdict[]{
-                VerificationVerdict.EXACT_MATCH,
-                VerificationVerdict.SAME_CONTENT,
-                VerificationVerdict.SIMILAR_MATCH}) {
-            assertThat(v.toDisplayStatus()).isEqualTo(DisplayStatus.AUTHENTICATED);
-        }
+    void onlyExactMatchMapsToAuthenticatedDisplayStatus() {
+        assertThat(VerificationVerdict.EXACT_MATCH.toDisplayStatus()).isEqualTo(DisplayStatus.AUTHENTICATED);
+        assertThat(VerificationVerdict.SAME_CONTENT.toDisplayStatus()).isEqualTo(DisplayStatus.CONTENT_SIMILAR);
+        assertThat(VerificationVerdict.SIMILAR_MATCH.toDisplayStatus()).isEqualTo(DisplayStatus.CONTENT_SIMILAR);
+        assertThat(VerificationVerdict.PARTIAL_MATCH.toDisplayStatus()).isEqualTo(DisplayStatus.PARTIAL_SIMILAR);
     }
 
     @Test

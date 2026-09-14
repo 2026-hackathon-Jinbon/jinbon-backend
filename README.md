@@ -66,7 +66,7 @@ CI 원문은 저장하지 않습니다. 인증 직후 서버 전용 비밀키로
   │     ├─ DB HIT → 블록체인 검증 후 결과 캐싱
   │     └─ MISS ↓
   ├─ 2. 지각해시(pHash) 생성 → 유사도 검색 (재인코딩 영상 대응)
-  │     → 프레임별 DCT 기반 pHash, 해밍 거리 < 10 이면 동일 영상 판정
+  │     → 영상 길이 + 같은 상대 시점의 16개 프레임 비교 → 콘텐츠 유사/부분 유사 판정
   │
   ├─ 3. [선택과제 2] OmniOne Chain 검증
   │     → Merkle Root로 온체인 Issuer DID + Signature 조회
@@ -75,7 +75,7 @@ CI 원문은 저장하지 않습니다. 인증 직후 서버 전용 비밀키로
   ├─ 4. [선택과제 1] Open DID VC 검증
   │     → VC 상태(ACTIVE), issuer/subject DID, 영상 commitment·트랜잭션 claim 일치 확인
   │
-  └─ 5. 진본 판정 + 검증 결과 캐싱 (TTL 10분)
+  └─ 5. 원본 일치와 등록 증거 구분 + 검증 결과 캐싱 (미등록·유사 후보·장애 제외)
 ```
 
 ## 해커톤 과제별 활용
@@ -257,20 +257,26 @@ cp .env.example .env
 
 ### 영상 검증 판정
 
-검증 API는 `authentic` boolean과 함께 다음 `verdict`를 반환합니다. `authentic`은 기존
-클라이언트 호환을 위해 유지하며, 신규 클라이언트는 `verdict`를 기준으로 화면을 구성해야 합니다.
+검증 API의 `authentic=true`는 SHA-256 원본 일치와 블록체인·VC 검증을 모두 통과한 경우에만 반환합니다.
+콘텐츠 유사는 `authentic=false`이며, 앱·확장 프로그램은 `displayStatus`로 원본 일치(초록), 유사·부분 유사(주황)를 구분합니다.
+등록 증거는 `blockchainVerified`, `vcVerified`, `vcClaimsBound`로 별도 표시합니다.
 
 | verdict | 의미 |
 |---------|------|
 | `EXACT_MATCH` | 등록된 원본 파일과 SHA-256이 정확히 일치 |
-| `SIMILAR_MATCH` | 지각해시가 유사하며 재인코딩 또는 일부 변환 가능 |
+| `SIMILAR_MATCH` | 길이·프레임 순서·일치율 기준 충족, 재인코딩 또는 변환 가능 (`CONTENT_SIMILAR`) |
+| `PARTIAL_MATCH` | 일부 프레임 유사, 길이·순서·구간 차이 또는 비교 정보 부족 (`PARTIAL_SIMILAR`) |
+| `CERTIFICATE_MISSING` | 보증서 미발급 |
+| `CERTIFICATE_INVALID` | 보증서 검증 실패 |
 | `REGISTERED_BUT_REVOKED` | 등록 기록은 있으나 이후 비활성화됨 |
 | `NOT_REGISTERED` | 일치하거나 유사한 등록 기록을 찾지 못함 |
 | `VERIFICATION_UNAVAILABLE` | 블록체인 또는 VC 외부 검증 장애, 혹은 등록 무결성을 확인할 수 없는 상태 |
 
 `NOT_REGISTERED`는 해당 영상이 조작되었다는 의미가 아닙니다. 등록 이력이 없다는 의미만
 가지며 응답의 `notice`에도 같은 안내가 포함됩니다. `SIMILAR_MATCH` 응답에는
-`similarityDistance`가 포함됩니다.
+`similarityDistance`가 포함됩니다. `SAME_CONTENT`는 더 이상 생성하지 않습니다.
+
+판정 기준·측정 결과·기존 영상 호환 범위는 [영상 검증 기준](docs/video-verification.md)을 참고하세요.
 
 ```json
 {
@@ -288,8 +294,9 @@ cp .env.example .env
 }
 ```
 
-`VERIFICATION_UNAVAILABLE` 결과는 장애 복구 후 즉시 다시 확인할 수 있도록 검증 캐시에
-저장하지 않습니다.
+`NOT_REGISTERED`, 유사 검색 결과, `VERIFICATION_UNAVAILABLE`는 캐시하지 않습니다.
+등록 직후 재검증에서 이전 미등록/유사 후보가 남지 않으며, 장애 복구 후에도 즉시 재검증합니다.
+캐시 키는 `verify:v3:`로 변경하여 이전 판정의 캐시를 사용하지 않습니다.
 
 ### 영상 VC 발급 상태
 

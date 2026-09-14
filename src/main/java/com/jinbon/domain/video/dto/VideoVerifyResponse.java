@@ -10,7 +10,7 @@ public record VideoVerifyResponse(
         @Schema(description = "클라이언트 표시용 상태") DisplayStatus displayStatus,
         @Schema(description = "지각해시 평균 해밍 거리. 유사 일치에서만 제공", nullable = true)
         Double similarityDistance,
-        @Schema(description = "진본 여부", example = "true") boolean authentic,
+        @Schema(description = "원본 파일 일치 및 블록체인·VC 검증 통과 여부. 콘텐츠 유사는 false", example = "true") boolean authentic,
         @Schema(description = "영상 ID (미등록 시 null)", example = "1") Long videoId,
         @Schema(description = "영상 등록자 DID (레거시 필드명 issuerDid, 미등록 시 null)") String issuerDid,
         @Schema(description = "등록 시각 (미등록 시 null)") LocalDateTime registeredAt,

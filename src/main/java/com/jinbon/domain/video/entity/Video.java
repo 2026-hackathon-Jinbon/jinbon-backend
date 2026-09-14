@@ -43,7 +43,7 @@ public class Video {
     /** 등록자 회원 ID (레거시 데이터는 null일 수 있음) */
     private Long memberId;
 
-    /** 지각해시 — DCT 기반 프레임별 fingerprint (재인코딩 영상 유사도 비교용) */
+    /** 지각해시 — v2는 길이(마이크로초)와 순서대로 추출한 프레임 해시 포함 */
     @Column(nullable = false, columnDefinition = "TEXT")
     private String perceptualHash;
 

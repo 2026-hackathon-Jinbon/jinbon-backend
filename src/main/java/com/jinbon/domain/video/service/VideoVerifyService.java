@@ -28,7 +28,6 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
-import java.util.List;
 import java.util.Set;
 
 /**
@@ -96,21 +95,7 @@ public class VideoVerifyService {
         log.info("No exact match, attempting perceptual hash similarity search");
         String inputFingerprint = generatePerceptualHash(file);
 
-        Video similarVideo = findSimilarVideo(inputFingerprint);
-        if (similarVideo == null) {
-            log.info("No similar video found");
-            VideoVerifyResponse result = VideoVerifyResponse.notRegistered();
-            verificationCache.put(fineHash, result);
-            return result;
-        }
-
-        double distance = perceptualHashService.compareFingerprints(inputFingerprint, similarVideo.getPerceptualHash());
-        log.info("Similar video found - videoId={}, hammingDistance={}", similarVideo.getId(), String.format("%.1f", distance));
-
-        VerificationVerdict matchedVerdict = distance == 0.0
-                ? VerificationVerdict.SAME_CONTENT
-                : VerificationVerdict.SIMILAR_MATCH;
-        VideoVerifyResponse result = buildVerifyResult(similarVideo, matchedVerdict, distance);
+        VideoVerifyResponse result = verifyFingerprint(inputFingerprint);
         verificationCache.put(fineHash, result);
         return result;
     }
@@ -157,22 +142,7 @@ public class VideoVerifyService {
             // 2. 지각해시 유사도 검색
             String fingerprint = perceptualHashService.generateFingerprint(downloadedFile);
 
-            Video similarVideo = findSimilarVideo(fingerprint);
-            if (similarVideo == null) {
-                log.info("No similar video found for URL");
-                VideoVerifyResponse result = VideoVerifyResponse.notRegistered();
-                verificationCache.put(urlCacheKey, result);
-                return result;
-            }
-
-            double distance = perceptualHashService.compareFingerprints(fingerprint, similarVideo.getPerceptualHash());
-            log.info("Similar video found from URL - videoId={}, hammingDistance={}",
-                    similarVideo.getId(), String.format("%.1f", distance));
-
-            VerificationVerdict matchedVerdict = distance == 0.0
-                    ? VerificationVerdict.SAME_CONTENT
-                    : VerificationVerdict.SIMILAR_MATCH;
-            VideoVerifyResponse result = buildVerifyResult(similarVideo, matchedVerdict, distance);
+            VideoVerifyResponse result = verifyFingerprint(fingerprint);
             verificationCache.put(urlCacheKey, result);
             return result;
 
@@ -225,7 +195,8 @@ public class VideoVerifyService {
                 || vcStatus == Status.DISABLED));
         boolean certificateInvalid = certificateIssued
                 && (vcStatus == Status.INVALID || !vcClaimsBound);
-        boolean authentic = blockchainVerified && vcVerified && vcClaimsBound
+        boolean authentic = matchedVerdict == VerificationVerdict.EXACT_MATCH
+                && blockchainVerified && vcVerified && vcClaimsBound
                 && !verificationUnavailable && !certificateInvalid;
         VerificationVerdict verdict = verificationUnavailable
                 ? VerificationVerdict.VERIFICATION_UNAVAILABLE : matchedVerdict;
@@ -248,12 +219,12 @@ public class VideoVerifyService {
             notice = "보증서가 폐기·만료되었거나 등록 당시 정보와 일치하지 않습니다.";
         } else if (matchedVerdict == VerificationVerdict.EXACT_MATCH) {
             message = "등록된 원본 파일과 정확히 일치합니다.";
-        } else if (matchedVerdict == VerificationVerdict.SAME_CONTENT) {
-            message = "등록된 영상과 동일한 콘텐츠로 판단됩니다.";
-            notice = "영상 프레임을 비교한 결과이며, 파일의 바이트가 동일하다는 의미는 아닙니다.";
+        } else if (matchedVerdict == VerificationVerdict.PARTIAL_MATCH) {
+            message = "등록 영상과 일부 프레임이 유사하지만 원본 일치는 확인할 수 없습니다.";
+            notice = "영상 길이·순서·구간 차이가 있거나 비교 정보가 부족합니다. 편집 여부를 확정하는 판정은 아닙니다.";
         } else {
             message = "등록 영상과 유사합니다. 재인코딩 또는 일부 변환되었을 수 있습니다.";
-            notice = "유사 일치는 원본 파일과 바이트 단위로 동일하다는 의미가 아닙니다.";
+            notice = "영상 길이와 순서대로 추출한 프레임을 비교한 결과입니다. 음성 변경이나 추출 프레임 사이의 편집은 확인하지 못할 수 있습니다.";
         }
         log.info("Video verification completed - videoId={}, authentic={}, blockchainVerified={}, vcVerified={}",
                 video.getId(), authentic, blockchainVerified, vcVerified);
@@ -267,23 +238,26 @@ public class VideoVerifyService {
      * 활성 영상들 중 지각해시가 유사한 영상을 찾는다.
      * MVP에서는 전체 활성 영상을 로드하여 in-memory 비교한다.
      */
-    private Video findSimilarVideo(String inputFingerprint) {
-        List<Video> activeVideos = videoRepository.findByActiveTrue();
-
-        Video bestMatch = null;
-        double bestDistance = PerceptualHashService.SIMILARITY_THRESHOLD;
-
-        for (Video video : activeVideos) {
+    private VideoVerifyResponse verifyFingerprint(String inputFingerprint) {
+        Video bestVideo = null;
+        PerceptualHashService.Comparison best = null;
+        for (Video video : videoRepository.findByActiveTrue()) {
             if (video.getPerceptualHash() == null) continue;
-
-            double distance = perceptualHashService.compareFingerprints(inputFingerprint, video.getPerceptualHash());
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                bestMatch = video;
+            var comparison = perceptualHashService.compare(inputFingerprint, video.getPerceptualHash());
+            if (!comparison.similar() && !comparison.partial()) continue;
+            if (best == null || (comparison.similar() && !best.similar())
+                    || (comparison.similar() == best.similar()
+                    && comparison.meanDistance() < best.meanDistance())) {
+                best = comparison;
+                bestVideo = video;
             }
         }
-
-        return bestMatch;
+        if (best == null) return VideoVerifyResponse.notRegistered();
+        log.info("Content comparison - videoId={}, mean={}, max={}, matchedRatio={}, durationCompatible={}",
+                bestVideo.getId(), best.meanDistance(), best.maxDistance(),
+                best.matchedRatio(), best.durationCompatible());
+        return buildVerifyResult(bestVideo, best.similar()
+                ? VerificationVerdict.SIMILAR_MATCH : VerificationVerdict.PARTIAL_MATCH, best.meanDistance());
     }
 
     /**

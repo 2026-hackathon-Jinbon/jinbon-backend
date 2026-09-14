@@ -1,6 +1,5 @@
 package com.jinbon.domain.video.service;
 
-import lombok.extern.slf4j.Slf4j;
 import org.bytedeco.javacv.FFmpegFrameGrabber;
 import org.bytedeco.javacv.Frame;
 import org.bytedeco.javacv.Java2DFrameConverter;
@@ -19,20 +18,16 @@ import java.util.List;
 /**
  * DCT 기반 지각해시(pHash) 서비스.
  *
- * 영상에서 고정 간격으로 프레임을 추출하고,
+ * 영상의 동일한 상대 시점에서 프레임을 추출하고,
  * 각 프레임의 64비트 pHash를 계산한다.
  * 재인코딩/리사이즈/압축에도 유사한 해시를 생성하여
  * 해밍 거리 기반 유사도 비교가 가능하다.
  */
-@Slf4j
 @Service
 public class PerceptualHashService {
 
-    /** 추출할 최대 프레임 수 */
-    private static final int MAX_FRAMES = 10;
-
-    /** 프레임 추출 간격 (초) */
-    private static final double FRAME_INTERVAL_SECONDS = 2.0;
+    /** 비교할 상대 시점의 프레임 수 */
+    private static final int MAX_FRAMES = 16;
 
     /** DCT 계산용 이미지 크기 */
     private static final int DCT_SIZE = 32;
@@ -40,29 +35,20 @@ public class PerceptualHashService {
     /** 해시 추출용 저주파 영역 크기 */
     private static final int HASH_SIZE = 8;
 
-    /** 동일 영상 판정 해밍 거리 임계값 */
+    /** 프레임 유사 판정 해밍 거리 임계값 */
     public static final int SIMILARITY_THRESHOLD = 10;
 
     /**
      * 영상 파일에서 지각해시 핑거프린트를 생성한다.
-     * 고정 간격으로 프레임을 추출하고 각 프레임의 pHash를 계산한다.
+     * 16개 상대 시점의 프레임을 추출하고 각 프레임의 pHash를 계산한다.
      *
-     * @return 프레임별 pHash 목록 (hex 문자열, 쉼표 구분)
+     * @return v2|영상 길이(마이크로초)|프레임별 pHash 목록
      */
     public String generateFingerprint(MultipartFile file) throws IOException {
         File tempFile = File.createTempFile("jinbon-phash-", ".tmp");
         try {
             file.transferTo(tempFile);
-            List<Long> frameHashes = extractFrameHashes(tempFile);
-
-            if (frameHashes.isEmpty()) {
-                throw new IOException("No frames could be extracted from video");
-            }
-
-            String fingerprint = framHashesToString(frameHashes);
-            log.info("Perceptual fingerprint generated - frames={}, fingerprint={}...",
-                    frameHashes.size(), fingerprint.substring(0, Math.min(32, fingerprint.length())));
-            return fingerprint;
+            return extractFingerprint(tempFile);
         } finally {
             Files.deleteIfExists(tempFile.toPath());
         }
@@ -73,81 +59,81 @@ public class PerceptualHashService {
      * URL 다운로드 등 이미 파일이 존재하는 경우 사용한다.
      */
     public String generateFingerprint(Path videoFile) throws IOException {
-        List<Long> frameHashes = extractFrameHashes(videoFile.toFile());
-
-        if (frameHashes.isEmpty()) {
-            throw new IOException("No frames could be extracted from video");
-        }
-
-        String fingerprint = framHashesToString(frameHashes);
-        log.info("Perceptual fingerprint generated - frames={}, fingerprint={}...",
-                frameHashes.size(), fingerprint.substring(0, Math.min(32, fingerprint.length())));
-        return fingerprint;
+        return extractFingerprint(videoFile.toFile());
     }
 
-    /**
-     * 두 핑거프린트의 유사도를 평균 해밍 거리로 계산한다.
-     * 각 프레임에 대해 가장 가까운 매칭 프레임을 찾아 평균을 낸다.
-     *
-     * @return 평균 해밍 거리 (0 = 동일, 64 = 완전히 다름)
-     */
-    public double compareFingerprints(String fingerprint1, String fingerprint2) {
-        List<Long> hashes1 = stringToFrameHashes(fingerprint1);
-        List<Long> hashes2 = stringToFrameHashes(fingerprint2);
-
-        if (hashes1.isEmpty() || hashes2.isEmpty()) {
-            return 64.0;
+    /** 같은 상대 시점의 거리와 일치율을 비교한다. 길이는 5% 이내만 허용한다. */
+    public Comparison compare(String first, String second) {
+        Fingerprint a = parse(first);
+        Fingerprint b = parse(second);
+        if (a.hashes().isEmpty() || b.hashes().isEmpty()) {
+            return new Comparison(64, 64, 0, false, false);
         }
-
-        // 각 프레임에 대해 가장 가까운 매칭 프레임의 해밍 거리를 합산
-        int totalDistance = 0;
-        for (long h1 : hashes1) {
-            int minDist = 64;
-            for (long h2 : hashes2) {
-                minDist = Math.min(minDist, Long.bitCount(h1 ^ h2));
-            }
-            totalDistance += minDist;
+        int count = Math.max(a.hashes().size(), b.hashes().size());
+        int total = 0, maximum = 0, matched = 0;
+        for (int i = 0; i < count; i++) {
+            int ai = Math.min((int) ((i + 0.5) * a.hashes().size() / count), a.hashes().size() - 1);
+            int bi = Math.min((int) ((i + 0.5) * b.hashes().size() / count), b.hashes().size() - 1);
+            int distance = Long.bitCount(a.hashes().get(ai) ^ b.hashes().get(bi));
+            total += distance;
+            maximum = Math.max(maximum, distance);
+            if (distance <= SIMILARITY_THRESHOLD) matched++;
         }
-
-        return (double) totalDistance / hashes1.size();
+        boolean durationCompatible = a.durationMicros() > 0 && b.durationMicros() > 0
+                && (double) Math.abs(a.durationMicros() - b.durationMicros())
+                / Math.max(a.durationMicros(), b.durationMicros()) <= 0.05;
+        // 순서 없는 대응은 부분 유사 후보를 찾는 용도로만 사용한다.
+        boolean partial = Math.max(coverage(a.hashes(), b.hashes()),
+                coverage(b.hashes(), a.hashes())) >= 0.6;
+        return new Comparison((double) total / count, maximum, (double) matched / count,
+                durationCompatible, partial);
     }
 
-    /**
-     * 영상에서 고정 간격으로 프레임을 추출하고 pHash를 계산한다.
-     */
-    private List<Long> extractFrameHashes(File videoFile) throws IOException {
+    public record Comparison(double meanDistance, int maxDistance, double matchedRatio,
+                             boolean durationCompatible, boolean partial) {
+        public boolean similar() {
+            return durationCompatible && meanDistance <= SIMILARITY_THRESHOLD
+                    && matchedRatio >= 0.9 && maxDistance <= 16;
+        }
+    }
+
+    private double coverage(List<Long> source, List<Long> target) {
+        long matches = source.stream().filter(a -> target.stream()
+                .anyMatch(b -> Long.bitCount(a ^ b) <= SIMILARITY_THRESHOLD)).count();
+        return (double) matches / source.size();
+    }
+
+    private record Fingerprint(long durationMicros, List<Long> hashes) {}
+
+    private Fingerprint parse(String value) {
+        if (value != null && value.startsWith("v2|")) {
+            String[] parts = value.split("\\|", 3);
+            return new Fingerprint(Long.parseLong(parts[1]), stringToFrameHashes(parts[2]));
+        }
+        // 기존 해시는 온체인 커밋에 포함되므로 덮어쓰지 않는다.
+        return new Fingerprint(0, stringToFrameHashes(value));
+    }
+
+    /** 길이와 동일한 상대 시점의 16개 프레임을 기존 TEXT 컬럼에 함께 저장한다. */
+    private String extractFingerprint(File videoFile) throws IOException {
         List<Long> hashes = new ArrayList<>();
-
         try (FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(videoFile);
              Java2DFrameConverter converter = new Java2DFrameConverter()) {
-
             grabber.start();
-            double durationSeconds = grabber.getLengthInTime() / 1_000_000.0;
-            int numFrames = Math.min((int) (durationSeconds / FRAME_INTERVAL_SECONDS), MAX_FRAMES);
-            numFrames = Math.max(numFrames, 1);
-
-            log.debug("Extracting frames - duration={}s, numFrames={}", String.format("%.1f", durationSeconds), numFrames);
-
-            for (int i = 0; i < numFrames; i++) {
-                long timestamp = (long) ((i + 0.5) * durationSeconds / numFrames * 1_000_000);
-                grabber.setTimestamp(timestamp);
-
+            long durationMicros = grabber.getLengthInTime();
+            if (durationMicros <= 0) throw new IOException("Video duration is unavailable");
+            for (int i = 0; i < MAX_FRAMES; i++) {
+                grabber.setTimestamp((long) ((i + 0.5) * durationMicros / MAX_FRAMES));
                 Frame frame = grabber.grabImage();
-                if (frame == null) continue;
-
-                BufferedImage image = converter.convert(frame);
-                if (image == null) continue;
-
-                long pHash = computePHash(image);
-                hashes.add(pHash);
+                BufferedImage image = frame == null ? null : converter.convert(frame);
+                // 추출 실패를 건너뛰면 상대 시점이 어긋나므로 검증을 중단한다.
+                if (image == null) throw new IOException("Could not extract comparison frame");
+                hashes.add(computePHash(image));
             }
-
-            grabber.stop();
+            return "v2|" + durationMicros + "|" + framHashesToString(hashes);
         } catch (Exception e) {
             throw new IOException("Failed to extract frames from video", e);
         }
-
-        return hashes;
     }
 
     /**
