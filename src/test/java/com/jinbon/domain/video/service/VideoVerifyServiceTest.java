@@ -1,5 +1,9 @@
 package com.jinbon.domain.video.service;
 
+import com.jinbon.domain.member.entity.Member;
+import com.jinbon.domain.member.entity.MemberRole;
+import com.jinbon.domain.member.entity.MemberStatus;
+import com.jinbon.domain.member.repository.MemberRepository;
 import com.jinbon.domain.video.dto.*;
 import com.jinbon.domain.video.entity.Video;
 import com.jinbon.domain.video.port.*;
@@ -13,6 +17,7 @@ import static org.mockito.Mockito.*;
 
 class VideoVerifyServiceTest {
     private final VideoRepository videos = mock(VideoRepository.class);
+    private final MemberRepository members = mock(MemberRepository.class);
     private final HashService hashes = mock(HashService.class);
     private final PerceptualHashService phash = spy(new PerceptualHashService());
     private final SignatureService signatures = mock(SignatureService.class);
@@ -20,13 +25,16 @@ class VideoVerifyServiceTest {
     private final CredentialVerificationPort credentials = mock(CredentialVerificationPort.class);
     private final VideoCertificateClaims claims = mock(VideoCertificateClaims.class);
     private final VerificationCache cache = mock(VerificationCache.class);
-    private final VideoVerifyService service = new VideoVerifyService(videos, hashes, phash, signatures,
-            ledger, credentials, claims, mock(VideoSourcePort.class), cache);
+    private final VideoFingerprintService segFp = spy(new VideoFingerprintService());
+    private final VideoVerifyService service = new VideoVerifyService(videos, members, hashes, phash, segFp,
+            signatures, ledger, credentials, claims, mock(VideoSourcePort.class), cache);
+    private final Member registrant = Member.create("h1:ci", "holder", "홍길동", "19800101",
+            MemberRole.ISSUER, MemberStatus.ACTIVE);
     private final MockMultipartFile file = new MockMultipartFile("file", new byte[]{1});
     private final String fineHash = "a".repeat(64);
     private final String fingerprint = "v2|2000000|0000000000000000,ffffffffffffffff";
     private final Video video = Video.create("original", "holder", 1L, fingerprint,
-            fineHash, "root", "path", "0x1", "tx", "signature", 1);
+            null, fineHash, "root", "path", "0x1", "tx", "signature", 1);
 
     @BeforeEach void setUp() throws Exception {
         video.markVcPending("offer", "plan", "issuer", "snapshot", 1, "BLOCKCHAIN_REGISTRATION");
@@ -41,31 +49,49 @@ class VideoVerifyServiceTest {
         when(credentials.verify("vc", "credential")).thenReturn(verified);
         when(claims.matchesSnapshot(video)).thenReturn(true);
         when(claims.matchesCredential(video, verified)).thenReturn(true);
+        registrant.updateDisplayName("기획재정부 대변인실");
+        when(members.findById(1L)).thenReturn(Optional.of(registrant));
     }
 
-    @Test void onlyExactFileWithValidEvidenceIsAuthentic() {
+    @Test void exactFileWithValidEvidenceIsAuthentic() {
         when(videos.findByFineHash(fineHash)).thenReturn(Optional.of(video));
         var result = service.verify(file);
         assertThat(result.verdict()).isEqualTo(VerificationVerdict.EXACT_MATCH);
         assertThat(result.authentic()).isTrue();
         assertThat(result.displayStatus()).isEqualTo(DisplayStatus.AUTHENTICATED);
+        assertThat(result.registrantName()).isEqualTo("기획재정부 대변인실");
     }
 
-    @Test void zeroPerceptualDistanceDoesNotCertifyOriginalBytes() {
+    @Test void perceptualMatchWithValidEvidenceIsAuthentic() {
         var result = service.verify(file);
         assertThat(result.verdict()).isEqualTo(VerificationVerdict.SIMILAR_MATCH);
-        assertThat(result.authentic()).isFalse();
-        assertThat(result.displayStatus()).isEqualTo(DisplayStatus.CONTENT_SIMILAR);
+        assertThat(result.authentic()).isTrue();
+        assertThat(result.displayStatus()).isEqualTo(DisplayStatus.AUTHENTICATED);
         assertThat(result.blockchainVerified()).isTrue();
         assertThat(result.vcVerified()).isTrue();
+        assertThat(result.registrantName()).isEqualTo("기획재정부 대변인실");
     }
 
-    @Test void singleOriginalFrameIsOnlyPartial() throws Exception {
+    @Test void perceptualMatchStillRequiresValidCredential() {
+        when(credentials.verify("vc", "credential")).thenReturn(CredentialVerificationPort.VerificationResult.invalid());
+        var result = service.verify(file);
+        assertThat(result.verdict()).isEqualTo(VerificationVerdict.CERTIFICATE_INVALID);
+        assertThat(result.authentic()).isFalse();
+        assertThat(result.displayStatus()).isEqualTo(DisplayStatus.NOT_AUTHENTICATED);
+    }
+
+    @Test void registrantNameFallsBackToRealNameWithoutDisplayName() {
+        registrant.updateDisplayName(null);
+        var result = service.verify(file);
+        assertThat(result.registrantName()).isEqualTo("홍길동");
+    }
+
+    @Test void singleOriginalFrameIsOnlyPartialAndNotAuthentic() throws Exception {
         doReturn("v2|1000000|0000000000000000").when(phash).generateFingerprint(file);
         var result = service.verify(file);
         assertThat(result.verdict()).isEqualTo(VerificationVerdict.PARTIAL_MATCH);
         assertThat(result.authentic()).isFalse();
-        assertThat(result.displayStatus()).isEqualTo(DisplayStatus.PARTIAL_SIMILAR);
+        assertThat(result.displayStatus()).isEqualTo(DisplayStatus.NOT_AUTHENTICATED);
     }
 
     @Test void exactMatchStillRequiresValidCredential() {

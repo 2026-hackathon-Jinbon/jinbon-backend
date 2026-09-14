@@ -47,6 +47,10 @@ public class Video {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String perceptualHash;
 
+    /** 세그먼트 지문 — 고정 간격(1초) 프레임 pHash 배열. 구간별 정밀 비교용 */
+    @Column(columnDefinition = "TEXT")
+    private String segmentFingerprint;
+
     /** 정밀해시 — SHA-256 전체 파일 해시 (원본 동일성 확인용, unique 제약) */
     @Column(nullable = false, unique = true, columnDefinition = "TEXT")
     private String fineHash;
@@ -113,7 +117,8 @@ public class Video {
      * 초기 VC 발급 상태는 NOT_REQUESTED, 활성 상태는 true로 설정된다.
      */
     public static Video create(String title, String issuerDid, Long memberId,
-                               String perceptualHash, String fineHash, String merkleRoot,
+                               String perceptualHash, String segmentFingerprint,
+                               String fineHash, String merkleRoot,
                                String merklePath, String blockNumber, String txHash,
                                String signature, Integer version) {
         Video video = new Video();
@@ -121,6 +126,7 @@ public class Video {
         video.issuerDid = issuerDid;
         video.memberId = memberId;
         video.perceptualHash = perceptualHash;
+        video.segmentFingerprint = segmentFingerprint;
         video.fineHash = fineHash;
         video.merkleRoot = merkleRoot;
         video.merklePath = merklePath;

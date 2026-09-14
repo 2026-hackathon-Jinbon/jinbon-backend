@@ -3,13 +3,20 @@ package com.jinbon.domain.video.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 @Schema(description = "영상 검증 판정 (내부용)",
-        allowableValues = {"EXACT_MATCH", "SAME_CONTENT", "SIMILAR_MATCH", "PARTIAL_MATCH", "REGISTERED_BUT_REVOKED",
+        allowableValues = {"EXACT_MATCH", "SAME_CONTENT", "SIMILAR_MATCH", "CONTENT_SIMILAR",
+                "PARTIAL_MATCH", "REGISTERED_BUT_REVOKED",
                 "CERTIFICATE_MISSING", "CERTIFICATE_INVALID", "NOT_REGISTERED", "VERIFICATION_UNAVAILABLE"})
 public enum VerificationVerdict {
+    /** 원본 파일과 SHA-256 일치 */
     EXACT_MATCH(DisplayStatus.AUTHENTICATED),
-    SAME_CONTENT(DisplayStatus.CONTENT_SIMILAR),
-    SIMILAR_MATCH(DisplayStatus.CONTENT_SIMILAR),
-    PARTIAL_MATCH(DisplayStatus.PARTIAL_SIMILAR),
+    /** 프레임 지각해시 완전 일치 — 재인코딩·컨테이너 변경본 */
+    SAME_CONTENT(DisplayStatus.AUTHENTICATED),
+    /** 지각해시 + 세그먼트 커버리지 통과 — 플랫폼 재인코딩본 */
+    SIMILAR_MATCH(DisplayStatus.AUTHENTICATED),
+    /** 원본 후보는 찾았지만 대응 구간의 무변조까지 확정하지 못함 */
+    CONTENT_SIMILAR(DisplayStatus.NOT_AUTHENTICATED),
+    /** 일부 프레임만 유사 — 진본으로 인정하지 않음 */
+    PARTIAL_MATCH(DisplayStatus.NOT_AUTHENTICATED),
     REGISTERED_BUT_REVOKED(DisplayStatus.NOT_AUTHENTICATED),
     CERTIFICATE_MISSING(DisplayStatus.NOT_AUTHENTICATED),
     CERTIFICATE_INVALID(DisplayStatus.NOT_AUTHENTICATED),
