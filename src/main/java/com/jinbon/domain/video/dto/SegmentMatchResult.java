@@ -37,10 +37,21 @@ public record SegmentMatchResult(
         @Schema(description = "원본 전체 세그먼트 수")
         int totalRefSegments,
         @Schema(description = "원본에 대응하지 않는 불일치 구간 목록")
-        List<GapRange> unmatchedRanges
+        List<GapRange> unmatchedRanges,
+        @Schema(description = "무음 세그먼트 수 (음성 지문 비교 시에만 유효, 영상은 항상 0)")
+        int silentSegments
 ) {
+    /** 영상 세그먼트 비교용 생성자 (silentSegments = 0) */
+    public SegmentMatchResult(double coverage, boolean orderPreserved,
+                              long bestOffsetMs, long matchedStartMs, long matchedEndMs,
+                              int matchedSegments, int totalQuerySegments, int totalRefSegments,
+                              List<GapRange> unmatchedRanges) {
+        this(coverage, orderPreserved, bestOffsetMs, matchedStartMs, matchedEndMs,
+                matchedSegments, totalQuerySegments, totalRefSegments, unmatchedRanges, 0);
+    }
+
     /** 세그먼트 비교가 불가능한 경우 (원본에 세그먼트 지문 없음 등) */
     public static SegmentMatchResult unavailable() {
-        return new SegmentMatchResult(0, false, 0, 0, 0, 0, 0, 0, List.of());
+        return new SegmentMatchResult(0, false, 0, 0, 0, 0, 0, 0, List.of(), 0);
     }
 }

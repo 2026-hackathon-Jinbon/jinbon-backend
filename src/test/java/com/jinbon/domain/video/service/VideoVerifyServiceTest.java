@@ -26,15 +26,20 @@ class VideoVerifyServiceTest {
     private final VideoCertificateClaims claims = mock(VideoCertificateClaims.class);
     private final VerificationCache cache = mock(VerificationCache.class);
     private final VideoFingerprintService segFp = spy(new VideoFingerprintService());
-    private final VideoVerifyService service = new VideoVerifyService(videos, members, hashes, phash, segFp,
+    private final AudioFingerprintService audioFp = spy(new AudioFingerprintService());
+    private final VideoVerifyService service = new VideoVerifyService(videos, members, hashes, phash, segFp, audioFp,
             signatures, ledger, credentials, claims, mock(VideoSourcePort.class), cache);
     private final Member registrant = Member.create("h1:ci", "holder", "홍길동", "19800101",
             MemberRole.ISSUER, MemberStatus.ACTIVE);
     private final MockMultipartFile file = new MockMultipartFile("file", new byte[]{1});
     private final String fineHash = "a".repeat(64);
     private final String fingerprint = "v2|2000000|0000000000000000,ffffffffffffffff";
+
+    // 세그먼트·음성 지문이 모두 있는 영상 (진본 판정 가능)
+    private final String segFpStr = "seg-v1|2000000|1000|0000000000000000,ffffffffffffffff";
+    private final String audioFpStr = "aud-v1|2000000|1000|00000000000000ff,ffffffffffffff00";
     private final Video video = Video.create("original", "holder", 1L, fingerprint,
-            null, fineHash, "root", "path", "0x1", "tx", "signature", 1);
+            segFpStr, audioFpStr, fineHash, "root", "path", "0x1", "tx", "signature", 1);
 
     @BeforeEach void setUp() throws Exception {
         video.markVcPending("offer", "plan", "issuer", "snapshot", 1, "BLOCKCHAIN_REGISTRATION");
@@ -43,6 +48,8 @@ class VideoVerifyServiceTest {
                 CredentialVerificationPort.Status.VERIFIED, "issuer", "holder", Map.of());
         when(hashes.generateFineHash(any())).thenReturn(fineHash);
         doReturn(fingerprint).when(phash).generateFingerprint(file);
+        doReturn(segFpStr).when(segFp).generate(file);
+        doReturn(audioFpStr).when(audioFp).generate(file);
         when(videos.findByActiveTrue()).thenReturn(List.of(video));
         when(ledger.getRecord("root")).thenReturn(new VideoLedgerPort.Record(true, true, "holder", "signature"));
         when(signatures.sign(anyString())).thenReturn("signature");
@@ -62,7 +69,7 @@ class VideoVerifyServiceTest {
         assertThat(result.registrantName()).isEqualTo("기획재정부 대변인실");
     }
 
-    @Test void perceptualMatchWithValidEvidenceIsAuthentic() {
+    @Test void videoAndAudioMatchIsAuthentic() {
         var result = service.verify(file);
         assertThat(result.verdict()).isEqualTo(VerificationVerdict.SIMILAR_MATCH);
         assertThat(result.authentic()).isTrue();
@@ -70,6 +77,24 @@ class VideoVerifyServiceTest {
         assertThat(result.blockchainVerified()).isTrue();
         assertThat(result.vcVerified()).isTrue();
         assertThat(result.registrantName()).isEqualTo("기획재정부 대변인실");
+        assertThat(result.audioMatch()).isNotNull();
+    }
+
+    @Test void videoMatchWithoutAudioIsContentSimilar() throws Exception {
+        // 음성 지문 생성 실패 → null
+        doThrow(new java.io.IOException("no audio")).when(audioFp).generate(file);
+        var result = service.verify(file);
+        assertThat(result.verdict()).isEqualTo(VerificationVerdict.CONTENT_SIMILAR);
+        assertThat(result.authentic()).isFalse();
+        assertThat(result.displayStatus()).isEqualTo(DisplayStatus.NOT_AUTHENTICATED);
+    }
+
+    @Test void videoMatchWithAudioMismatchIsContentSimilar() throws Exception {
+        // 제출 영상의 음성이 원본과 완전히 다름 (해밍 거리 큼)
+        doReturn("aud-v1|2000000|1000|aaaaaaaaaaaaaaaa,5555555555555555").when(audioFp).generate(file);
+        var result = service.verify(file);
+        assertThat(result.verdict()).isEqualTo(VerificationVerdict.CONTENT_SIMILAR);
+        assertThat(result.authentic()).isFalse();
     }
 
     @Test void perceptualMatchStillRequiresValidCredential() {
@@ -86,8 +111,11 @@ class VideoVerifyServiceTest {
         assertThat(result.registrantName()).isEqualTo("홍길동");
     }
 
-    @Test void singleOriginalFrameIsOnlyPartialAndNotAuthentic() throws Exception {
+    @Test void partialPHashWithLowSegmentCoverageIsPartialMatch() throws Exception {
         doReturn("v2|1000000|0000000000000000").when(phash).generateFingerprint(file);
+        // 세그먼트·음성 지문도 없는 경우 → PARTIAL_MATCH
+        doThrow(new java.io.IOException("fail")).when(segFp).generate(file);
+        doThrow(new java.io.IOException("fail")).when(audioFp).generate(file);
         var result = service.verify(file);
         assertThat(result.verdict()).isEqualTo(VerificationVerdict.PARTIAL_MATCH);
         assertThat(result.authentic()).isFalse();

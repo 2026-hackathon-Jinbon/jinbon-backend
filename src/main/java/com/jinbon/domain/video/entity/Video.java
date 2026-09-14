@@ -51,6 +51,10 @@ public class Video {
     @Column(columnDefinition = "TEXT")
     private String segmentFingerprint;
 
+    /** 음성 지문 — 고정 간격(1초) 스펙트로그램 pHash 배열. 음성 변조 검출용 */
+    @Column(columnDefinition = "TEXT")
+    private String audioFingerprint;
+
     /** 정밀해시 — SHA-256 전체 파일 해시 (원본 동일성 확인용, unique 제약) */
     @Column(nullable = false, unique = true, columnDefinition = "TEXT")
     private String fineHash;
@@ -118,8 +122,9 @@ public class Video {
      */
     public static Video create(String title, String issuerDid, Long memberId,
                                String perceptualHash, String segmentFingerprint,
-                               String fineHash, String merkleRoot,
-                               String merklePath, String blockNumber, String txHash,
+                               String audioFingerprint, String fineHash,
+                               String merkleRoot, String merklePath,
+                               String blockNumber, String txHash,
                                String signature, Integer version) {
         Video video = new Video();
         video.title = title;
@@ -127,6 +132,7 @@ public class Video {
         video.memberId = memberId;
         video.perceptualHash = perceptualHash;
         video.segmentFingerprint = segmentFingerprint;
+        video.audioFingerprint = audioFingerprint;
         video.fineHash = fineHash;
         video.merkleRoot = merkleRoot;
         video.merklePath = merklePath;

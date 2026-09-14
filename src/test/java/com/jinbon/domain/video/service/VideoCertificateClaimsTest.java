@@ -107,7 +107,7 @@ class VideoCertificateClaimsTest {
 
     private Video registeredVideo() {
         return Video.create("title", "did:omn:holder", 1L,
-                "perceptual", null, "fine", "root", "path",
+                "perceptual", null, null, "fine", "root", "path",
                 "0x10", "0xtx", "signature", 1);
     }
 }

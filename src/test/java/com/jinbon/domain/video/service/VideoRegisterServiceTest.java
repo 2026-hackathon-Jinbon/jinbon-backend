@@ -22,7 +22,7 @@ class VideoRegisterServiceTest {
         VideoLedgerPort ledger = mock(VideoLedgerPort.class);
         String fingerprint = "v2|1000000|0000000000000000";
         Video existing = Video.create("existing", "another-holder", 2L, fingerprint,
-                null, "different-file-hash", "old-root", "path", "block", "tx", "sig", 1);
+                null, null, "different-file-hash", "old-root", "path", "block", "tx", "sig", 1);
         when(videos.findAll()).thenReturn(List.of(existing));
         when(members.findById(1L)).thenReturn(Optional.of(Member.create(
                 "ci", "holder", "name", "birth", MemberRole.ISSUER, MemberStatus.ACTIVE)));
@@ -34,7 +34,8 @@ class VideoRegisterServiceTest {
                 .thenReturn(new VideoLedgerPort.Registration("tx", "block"));
         when(ledger.getRecord(anyString())).thenReturn(new VideoLedgerPort.Record(true, true, "holder", "sig"));
         VideoRegisterService service = new VideoRegisterService(members, videos, hashes, phash,
-                mock(VideoFingerprintService.class), signatures, ledger,
+                mock(VideoFingerprintService.class), mock(AudioFingerprintService.class),
+                signatures, ledger,
                 mock(CredentialIssuancePort.class), mock(VideoCertificateClaims.class),
                 mock(CredentialVerificationPort.class), mock(OpenDidProperties.class), mock(VideoVerifyService.class));
 

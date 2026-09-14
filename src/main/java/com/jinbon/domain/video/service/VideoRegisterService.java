@@ -48,6 +48,7 @@ public class VideoRegisterService {
     private final HashService hashService;
     private final PerceptualHashService perceptualHashService;
     private final VideoFingerprintService videoFingerprintService;
+    private final AudioFingerprintService audioFingerprintService;
     private final SignatureService signatureService;
     private final VideoLedgerPort videoLedgerPort;
     private final CredentialIssuancePort credentialIssuancePort;
@@ -100,6 +101,9 @@ public class VideoRegisterService {
         // 세그먼트 지문 생성 (고정 간격 pHash, 정밀 비교용)
         String segmentFingerprint = generateSegmentFingerprint(file);
 
+        // 음성 지문 생성 (고정 간격 스펙트로그램 pHash, 음성 변조 검출용)
+        String audioFingerprint = generateAudioFingerprint(file);
+
         // 머클트리 구성 + 전자서명
         String merkleRoot = hashService.buildMerkleRoot(perceptualHash, fineHash);
         String merklePath = hashService.buildMerklePath(perceptualHash, fineHash, merkleRoot);
@@ -109,7 +113,8 @@ public class VideoRegisterService {
         // 먼저 DB unique 제약을 flush하여 이 요청이 fineHash 등록 권한을 예약한다.
         // 동시 중복 요청이 블록체인 트랜잭션까지 보내는 것을 방지한다.
         Video video = Video.create(title, issuerDid, memberId, perceptualHash,
-                segmentFingerprint, fineHash, merkleRoot, merklePath, null, null, signature, 1);
+                segmentFingerprint, audioFingerprint, fineHash,
+                merkleRoot, merklePath, null, null, signature, 1);
 
         Video saved;
         try {
@@ -301,6 +306,17 @@ public class VideoRegisterService {
         } catch (IOException e) {
             // 세그먼트 지문 실패는 등록을 차단하지 않는다 (기존 pHash로 폴백)
             log.warn("Failed to generate segment fingerprint, proceeding without it - fileName={}",
+                    file.getOriginalFilename(), e);
+            return null;
+        }
+    }
+
+    private String generateAudioFingerprint(MultipartFile file) {
+        try {
+            return audioFingerprintService.generate(file);
+        } catch (IOException e) {
+            // 음성 지문 실패는 등록을 차단하지 않는다 (음성 검증 불가 시 콘텐츠 유사 처리)
+            log.warn("Failed to generate audio fingerprint, proceeding without it - fileName={}",
                     file.getOriginalFilename(), e);
             return null;
         }

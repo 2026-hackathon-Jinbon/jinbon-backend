@@ -27,13 +27,13 @@ class RedisVerificationCacheTest {
                 com.jinbon.domain.video.dto.VerificationVerdict.EXACT_MATCH, null, true,
                 null, null, null, true, true, true, true, "원본 일치", null);
         String json = new ObjectMapper().writeValueAsString(result);
-        when(values.get("verify:v3:result:fine-hash")).thenReturn(json);
+        when(values.get("verify:v1:result:fine-hash")).thenReturn(json);
 
         cache.put("fine-hash", result);
         VideoVerifyResponse loaded = cache.get("fine-hash");
 
         assertThat(loaded).isEqualTo(result);
-        verify(values).set(eq("verify:v3:result:fine-hash"), any(String.class), eq(Duration.ofMinutes(10)));
+        verify(values).set(eq("verify:v1:result:fine-hash"), any(String.class), eq(Duration.ofMinutes(10)));
     }
     @Test
     void doesNotCacheNotRegisteredResultsForFilesOrUrls() {

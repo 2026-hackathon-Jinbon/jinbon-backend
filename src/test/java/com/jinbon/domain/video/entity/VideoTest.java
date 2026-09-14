@@ -36,6 +36,6 @@ class VideoTest {
 
     private Video video() {
         return Video.create("title", "did:omn:holder", 1L,
-                "perceptual", null, "fine", "root", "path", null, null, "signature", 1);
+                "perceptual", null, null, "fine", "root", "path", null, null, "signature", 1);
     }
 }

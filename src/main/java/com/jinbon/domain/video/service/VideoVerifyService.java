@@ -65,6 +65,7 @@ public class VideoVerifyService {
     private final HashService hashService;
     private final PerceptualHashService perceptualHashService;
     private final VideoFingerprintService videoFingerprintService;
+    private final AudioFingerprintService audioFingerprintService;
     private final SignatureService signatureService;
     private final VideoLedgerPort videoLedgerPort;
     private final CredentialVerificationPort credentialVerificationPort;
@@ -105,8 +106,9 @@ public class VideoVerifyService {
         log.info("No exact match, attempting perceptual hash similarity search");
         String inputFingerprint = generatePerceptualHash(file);
         String inputSegment = generateSegmentFingerprint(file);
+        String inputAudio = generateAudioFingerprint(file);
 
-        VideoVerifyResponse result = verifyFingerprint(inputFingerprint, inputSegment);
+        VideoVerifyResponse result = verifyFingerprint(inputFingerprint, inputSegment, inputAudio);
         verificationCache.put(fineHash, result);
         return result;
     }
@@ -150,11 +152,12 @@ public class VideoVerifyService {
                 return result;
             }
 
-            // 2. 지각해시 + 세그먼트 유사도 검색
+            // 2. 지각해시 + 세그먼트 + 음성 유사도 검색
             String fingerprint = perceptualHashService.generateFingerprint(downloadedFile);
             String segmentFp = generateSegmentFingerprintFromPath(downloadedFile);
+            String audioFp = generateAudioFingerprintFromPath(downloadedFile);
 
-            VideoVerifyResponse result = verifyFingerprint(fingerprint, segmentFp);
+            VideoVerifyResponse result = verifyFingerprint(fingerprint, segmentFp, audioFp);
             verificationCache.put(urlCacheKey, result);
             return result;
 
@@ -176,14 +179,14 @@ public class VideoVerifyService {
 
     /**
      * 매칭된 영상에 대해 상태 확인 + 블록체인 검증을 수행하고 결과를 생성한다.
-     * 세그먼트 비교 결과가 없는 경우 (EXACT_MATCH 등) 사용한다.
+     * 세그먼트·음성 비교 결과가 없는 경우 (EXACT_MATCH 등) 사용한다.
      */
     private VideoVerifyResponse buildVerifyResult(
             Video video,
             VerificationVerdict matchedVerdict,
             Double similarityDistance
     ) {
-        return buildVerifyResult(video, matchedVerdict, similarityDistance, null);
+        return buildVerifyResult(video, matchedVerdict, similarityDistance, null, null);
     }
 
     /**
@@ -193,7 +196,8 @@ public class VideoVerifyService {
             Video video,
             VerificationVerdict matchedVerdict,
             Double similarityDistance,
-            SegmentMatchResult segmentResult
+            SegmentMatchResult segmentResult,
+            SegmentMatchResult audioResult
     ) {
         // 비활성화된 영상 확인
         if (!video.isActive()) {
@@ -268,7 +272,7 @@ public class VideoVerifyService {
         return VideoVerifyResponse.of(verdict, similarityDistance, authentic,
                 video.getId(), video.getIssuerDid(), video.getRegisteredAt(), registrantName,
                 blockchainVerified, vcVerified, vcClaimsBound, true,
-                message, notice, segmentResult);
+                message, notice, segmentResult, audioResult);
     }
 
     private String buildContentSimilarNotice(SegmentMatchResult seg) {
@@ -285,18 +289,24 @@ public class VideoVerifyService {
     private static final double SEGMENT_COVERAGE_HIGH = 0.95;
     private static final double SEGMENT_COVERAGE_PARTIAL = 0.80;
 
+    /** 음성 비교 커버리지 임계값 — 이 이상이면 음성 일치로 판정 */
+    private static final double AUDIO_COVERAGE_HIGH = 0.90;
+
     /**
-     * 활성 영상들 중 지각해시가 유사한 영상을 찾고, 세그먼트 지문으로 정밀 비교한다.
+     * 활성 영상들 중 지각해시가 유사한 영상을 찾고,
+     * 세그먼트 지문 + 음성 지문으로 정밀 비교한다.
      *
-     * <p>검증 2단계: pHash 후보 선별 → 세그먼트 정밀 비교</p>
+     * <p>검증 2단계: pHash 후보 선별 → 영상 세그먼트 비교 → 음성 비교 → 종합 판정</p>
      * <ul>
-     *   <li>pHash similar + 세그먼트 coverage ≥ 95% + 순서 보존 → SIMILAR_MATCH 유지</li>
-     *   <li>pHash similar + 세그먼트 coverage < 95% → CONTENT_SIMILAR로 강등</li>
-     *   <li>pHash partial + 세그먼트 coverage ≥ 80% + 순서 보존 → CONTENT_SIMILAR + 구간 표시</li>
-     *   <li>세그먼트 지문이 없는 원본 → 기존 pHash 판정으로 폴백</li>
+     *   <li>영상 + 음성 모두 통과 → SIMILAR_MATCH (진본)</li>
+     *   <li>영상 통과 + 음성 없음 → CONTENT_SIMILAR (보류)</li>
+     *   <li>영상 통과 + 음성 불일치 → CONTENT_SIMILAR (차단)</li>
+     *   <li>영상 미통과 → 기존 로직</li>
      * </ul>
      */
-    private VideoVerifyResponse verifyFingerprint(String inputFingerprint, String inputSegment) {
+    private VideoVerifyResponse verifyFingerprint(String inputFingerprint,
+                                                   String inputSegment,
+                                                   String inputAudio) {
         Video bestVideo = null;
         PerceptualHashService.Comparison best = null;
         for (Video video : videoRepository.findByActiveTrue()) {
@@ -315,47 +325,73 @@ public class VideoVerifyService {
                 bestVideo.getId(), best.meanDistance(), best.maxDistance(),
                 best.matchedRatio(), best.durationCompatible());
 
-        // 세그먼트 정밀 비교
+        // 영상 세그먼트 정밀 비교
         SegmentMatchResult segmentResult = compareSegments(inputSegment, bestVideo);
-        VerificationVerdict verdict = refineVerdict(best, segmentResult);
+        // 음성 세그먼트 비교
+        SegmentMatchResult audioResult = compareAudio(inputAudio, bestVideo);
+        // 영상·음성 종합 판정
+        VerificationVerdict verdict = refineVerdict(best, segmentResult, audioResult);
 
         log.info("Segment comparison - videoId={}, coverage={}, orderPreserved={}, gaps={}",
                 bestVideo.getId(),
                 segmentResult != null ? segmentResult.coverage() : "N/A",
                 segmentResult != null ? segmentResult.orderPreserved() : "N/A",
                 segmentResult != null ? segmentResult.unmatchedRanges().size() : "N/A");
+        log.info("Audio comparison - videoId={}, coverage={}, silentSegments={}",
+                bestVideo.getId(),
+                audioResult != null ? audioResult.coverage() : "N/A",
+                audioResult != null ? audioResult.silentSegments() : "N/A");
 
-        return buildVerifyResult(bestVideo, verdict, best.meanDistance(), segmentResult);
+        return buildVerifyResult(bestVideo, verdict, best.meanDistance(), segmentResult, audioResult);
     }
 
     /**
-     * pHash 판정과 세그먼트 비교 결과를 종합하여 최종 판정을 결정한다.
+     * pHash 판정, 세그먼트 비교, 음성 비교 결과를 종합하여 최종 판정을 결정한다.
+     *
+     * <p>핵심 원칙: 영상이 아무리 일치해도 음성이 불일치하면 진본 승인을 차단한다.</p>
      */
     private VerificationVerdict refineVerdict(PerceptualHashService.Comparison pHashResult,
-                                               SegmentMatchResult segmentResult) {
+                                               SegmentMatchResult segmentResult,
+                                               SegmentMatchResult audioResult) {
         boolean pHashSimilar = pHashResult.similar();
 
-        // 세그먼트 비교 불가 → 기존 pHash 판정으로 폴백
+        // 세그먼트 비교 불가 → 기존 pHash 판정으로 폴백 (음성만으로는 승격 불가)
         if (segmentResult == null || segmentResult.totalRefSegments() == 0) {
             return pHashSimilar
-                    ? VerificationVerdict.SIMILAR_MATCH
+                    ? VerificationVerdict.CONTENT_SIMILAR
                     : VerificationVerdict.PARTIAL_MATCH;
         }
 
-        double coverage = segmentResult.coverage();
-        boolean ordered = segmentResult.orderPreserved();
+        double videoCoverage = segmentResult.coverage();
+        boolean videoOrdered = segmentResult.orderPreserved();
+        boolean videoHigh = videoCoverage >= SEGMENT_COVERAGE_HIGH && videoOrdered;
 
-        if (pHashSimilar) {
-            // pHash 유사 + 세그먼트 고커버리지 + 순서 보존 → SIMILAR_MATCH 유지
-            if (coverage >= SEGMENT_COVERAGE_HIGH && ordered) {
+        // 음성 비교 가능 여부 판정
+        boolean audioAvailable = audioResult != null && audioResult.totalRefSegments() > 0;
+        boolean audioHigh = audioAvailable
+                && audioResult.coverage() >= AUDIO_COVERAGE_HIGH
+                && audioResult.orderPreserved();
+
+        if (pHashSimilar && videoHigh) {
+            if (!audioAvailable) {
+                // 영상 통과 + 음성 비교 불가 → 진본 보류
+                return VerificationVerdict.CONTENT_SIMILAR;
+            }
+            if (audioHigh) {
+                // 영상 + 음성 모두 통과 → 진본
                 return VerificationVerdict.SIMILAR_MATCH;
             }
-            // pHash 유사하지만 세그먼트 커버리지 부족 → CONTENT_SIMILAR로 강등
+            // 영상 통과 + 음성 불일치 → 차단
             return VerificationVerdict.CONTENT_SIMILAR;
         }
 
-        // pHash partial + 세그먼트 커버리지 충분 + 순서 보존 → CONTENT_SIMILAR (구간 표시)
-        if (coverage >= SEGMENT_COVERAGE_PARTIAL && ordered) {
+        if (pHashSimilar) {
+            // pHash 유사하지만 영상 세그먼트 커버리지 부족
+            return VerificationVerdict.CONTENT_SIMILAR;
+        }
+
+        // pHash partial + 세그먼트 커버리지 충분 + 순서 보존 → CONTENT_SIMILAR
+        if (videoCoverage >= SEGMENT_COVERAGE_PARTIAL && videoOrdered) {
             return VerificationVerdict.CONTENT_SIMILAR;
         }
         return VerificationVerdict.PARTIAL_MATCH;
@@ -370,6 +406,17 @@ public class VideoVerifyService {
             return null;
         }
         return videoFingerprintService.compare(inputSegment, referenceVideo.getSegmentFingerprint());
+    }
+
+    /**
+     * 제출 영상의 음성 지문과 원본의 음성 지문을 비교한다.
+     * 어느 한쪽이라도 음성 지문이 없으면 null을 반환한다.
+     */
+    private SegmentMatchResult compareAudio(String inputAudio, Video referenceVideo) {
+        if (inputAudio == null || referenceVideo.getAudioFingerprint() == null) {
+            return null;
+        }
+        return audioFingerprintService.compare(inputAudio, referenceVideo.getAudioFingerprint());
     }
 
     /**
@@ -448,6 +495,25 @@ public class VideoVerifyService {
             return videoFingerprintService.generate(videoFile);
         } catch (IOException e) {
             log.warn("Failed to generate segment fingerprint from path", e);
+            return null;
+        }
+    }
+
+    private String generateAudioFingerprint(MultipartFile file) {
+        try {
+            return audioFingerprintService.generate(file);
+        } catch (IOException e) {
+            log.warn("Failed to generate audio fingerprint - fileName={}",
+                    file.getOriginalFilename(), e);
+            return null;
+        }
+    }
+
+    private String generateAudioFingerprintFromPath(Path videoFile) {
+        try {
+            return audioFingerprintService.generate(videoFile);
+        } catch (IOException e) {
+            log.warn("Failed to generate audio fingerprint from path", e);
             return null;
         }
     }

@@ -21,21 +21,23 @@ public record VideoVerifyResponse(
         @Schema(description = "영상 활성 상태") boolean active,
         @Schema(description = "검증 상세 메시지") String message,
         @Schema(description = "판정 해석 시 주의사항", nullable = true) String notice,
-        @Schema(description = "세그먼트 지문 비교 결과. 세그먼트 비교가 수행된 경우에만 제공", nullable = true)
-        SegmentMatchResult segmentMatch
+        @Schema(description = "영상 세그먼트 지문 비교 결과. 세그먼트 비교가 수행된 경우에만 제공", nullable = true)
+        SegmentMatchResult segmentMatch,
+        @Schema(description = "음성 세그먼트 지문 비교 결과. 음성 비교가 수행된 경우에만 제공", nullable = true)
+        SegmentMatchResult audioMatch
 ) {
 
-    /** 세그먼트 비교 없는 기본 팩토리 (기존 호출 호환) */
+    /** 세그먼트·음성 비교 없는 기본 팩토리 (기존 호출 호환) */
     public static VideoVerifyResponse of(VerificationVerdict verdict, Double similarityDistance,
                                           boolean authentic, Long videoId, String issuerDid,
                                           LocalDateTime registeredAt, boolean blockchainVerified,
                                           boolean vcVerified, boolean vcClaimsBound, boolean active,
                                           String message, String notice) {
         return of(verdict, similarityDistance, authentic, videoId, issuerDid, registeredAt, null,
-                blockchainVerified, vcVerified, vcClaimsBound, active, message, notice, null);
+                blockchainVerified, vcVerified, vcClaimsBound, active, message, notice, null, null);
     }
 
-    /** 세그먼트 비교 없는 팩토리 (등록자명 포함) */
+    /** 세그먼트·음성 비교 없는 팩토리 (등록자명 포함) */
     public static VideoVerifyResponse of(VerificationVerdict verdict, Double similarityDistance,
                                           boolean authentic, Long videoId, String issuerDid,
                                           LocalDateTime registeredAt, String registrantName,
@@ -44,10 +46,25 @@ public record VideoVerifyResponse(
                                           String message, String notice) {
         return of(verdict, similarityDistance, authentic, videoId, issuerDid, registeredAt,
                 registrantName, blockchainVerified, vcVerified, vcClaimsBound, active,
-                message, notice, null);
+                message, notice, null, null);
     }
 
-    /** 세그먼트 비교 결과 포함 팩토리 */
+    /** 세그먼트 + 음성 비교 결과 포함 팩토리 */
+    public static VideoVerifyResponse of(VerificationVerdict verdict, Double similarityDistance,
+                                          boolean authentic, Long videoId, String issuerDid,
+                                          LocalDateTime registeredAt, String registrantName,
+                                          boolean blockchainVerified, boolean vcVerified,
+                                          boolean vcClaimsBound, boolean active,
+                                          String message, String notice,
+                                          SegmentMatchResult segmentMatch,
+                                          SegmentMatchResult audioMatch) {
+        return new VideoVerifyResponse(verdict, verdict.toDisplayStatus(), similarityDistance,
+                authentic, videoId, issuerDid, registeredAt, registrantName,
+                blockchainVerified, vcVerified, vcClaimsBound, active, message, notice,
+                segmentMatch, audioMatch);
+    }
+
+    /** 세그먼트만 있는 팩토리 (하위 호환) */
     public static VideoVerifyResponse of(VerificationVerdict verdict, Double similarityDistance,
                                           boolean authentic, Long videoId, String issuerDid,
                                           LocalDateTime registeredAt, String registrantName,
@@ -55,10 +72,9 @@ public record VideoVerifyResponse(
                                           boolean vcClaimsBound, boolean active,
                                           String message, String notice,
                                           SegmentMatchResult segmentMatch) {
-        return new VideoVerifyResponse(verdict, verdict.toDisplayStatus(), similarityDistance,
-                authentic, videoId, issuerDid, registeredAt, registrantName,
-                blockchainVerified, vcVerified, vcClaimsBound, active, message, notice,
-                segmentMatch);
+        return of(verdict, similarityDistance, authentic, videoId, issuerDid, registeredAt,
+                registrantName, blockchainVerified, vcVerified, vcClaimsBound, active,
+                message, notice, segmentMatch, null);
     }
 
     public static VideoVerifyResponse notRegistered() {
