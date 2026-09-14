@@ -94,8 +94,15 @@ public class KakaoSkillController {
             builder.append("✅ 진본으로 확인됐어요.\n\n");
             builder.append(message);
 
+            if (result.registrantName() != null) {
+                builder.append("\n\n등록자: ").append(result.registrantName());
+            }
+            if (result.registeredAt() != null) {
+                builder.append("\n등록 시각: ").append(result.registeredAt().toLocalDate())
+                        .append(" ").append(result.registeredAt().toLocalTime().withNano(0));
+            }
             if (result.videoId() != null) {
-                builder.append("\n\n등록 영상 ID: ").append(result.videoId());
+                builder.append("\n등록 영상 ID: ").append(result.videoId());
             }
 
             return builder.toString();

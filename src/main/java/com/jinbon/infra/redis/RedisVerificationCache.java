@@ -21,8 +21,8 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class RedisVerificationCache implements VerificationCache {
 
-    private static final String RESULT_KEY_PREFIX = "verify:v3:result:";
-    private static final String VIDEO_INDEX_KEY_PREFIX = "verify:v3:video:";
+    private static final String RESULT_KEY_PREFIX = "verify:v1:result:";
+    private static final String VIDEO_INDEX_KEY_PREFIX = "verify:v1:video:";
     private static final Duration TTL = Duration.ofMinutes(10);
 
     private final RedisTemplate<String, String> redisTemplate;

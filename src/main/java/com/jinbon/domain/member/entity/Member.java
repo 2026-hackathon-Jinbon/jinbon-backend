@@ -49,6 +49,9 @@ public class Member {
     /** 생년월일 */
     private String birth;
 
+    /** 검증 결과에 노출할 등록자 표시명 (기관명·직함 등). 없으면 실명을 쓴다 */
+    private String displayName;
+
     /** 회원 역할 (USER: 일반, ISSUER: 영상 등록 권한) */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -112,6 +115,17 @@ public class Member {
         this.didRegisteredAt = LocalDateTime.now();
         this.joinedAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
+    }
+
+    /** 검증 결과에 노출할 표시명을 바꾼다. 비우면 실명으로 돌아간다 */
+    public void updateDisplayName(String displayName) {
+        this.displayName = (displayName == null || displayName.isBlank()) ? null : displayName.trim();
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    /** 검증 결과에 노출할 이름 — 표시명이 없으면 실명 */
+    public String getPublicName() {
+        return displayName != null ? displayName : name;
     }
 
     /** 앱 재설치 후 DID를 재바인딩한다 */

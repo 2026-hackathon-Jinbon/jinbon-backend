@@ -29,11 +29,11 @@ class VideoVerifyResponseTest {
     }
 
     @Test
-    void onlyExactMatchMapsToAuthenticatedDisplayStatus() {
+    void contentMatchesMapToAuthenticatedButPartialDoesNot() {
         assertThat(VerificationVerdict.EXACT_MATCH.toDisplayStatus()).isEqualTo(DisplayStatus.AUTHENTICATED);
-        assertThat(VerificationVerdict.SAME_CONTENT.toDisplayStatus()).isEqualTo(DisplayStatus.CONTENT_SIMILAR);
-        assertThat(VerificationVerdict.SIMILAR_MATCH.toDisplayStatus()).isEqualTo(DisplayStatus.CONTENT_SIMILAR);
-        assertThat(VerificationVerdict.PARTIAL_MATCH.toDisplayStatus()).isEqualTo(DisplayStatus.PARTIAL_SIMILAR);
+        assertThat(VerificationVerdict.SAME_CONTENT.toDisplayStatus()).isEqualTo(DisplayStatus.AUTHENTICATED);
+        assertThat(VerificationVerdict.SIMILAR_MATCH.toDisplayStatus()).isEqualTo(DisplayStatus.AUTHENTICATED);
+        assertThat(VerificationVerdict.PARTIAL_MATCH.toDisplayStatus()).isEqualTo(DisplayStatus.NOT_AUTHENTICATED);
     }
 
     @Test
