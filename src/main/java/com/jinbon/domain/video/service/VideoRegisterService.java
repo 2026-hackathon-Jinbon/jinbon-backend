@@ -46,9 +46,7 @@ public class VideoRegisterService {
     private final MemberRepository memberRepository;
     private final VideoRepository videoRepository;
     private final HashService hashService;
-    private final PerceptualHashService perceptualHashService;
-    private final VideoFingerprintService videoFingerprintService;
-    private final AudioFingerprintService audioFingerprintService;
+    private final MediaFingerprintService mediaFingerprintService;
     private final SignatureService signatureService;
     private final VideoLedgerPort videoLedgerPort;
     private final CredentialIssuancePort credentialIssuancePort;
@@ -93,16 +91,12 @@ public class VideoRegisterService {
             throw new BusinessException(ErrorCode.VIDEO_ALREADY_REGISTERED);
         }
 
-        // 지각해시 생성 (DCT 기반 pHash, 프레임별)
-        String perceptualHash = generatePerceptualHash(file);
-        log.debug("Perceptual hash generated - fingerprint={}...",
-                perceptualHash.substring(0, Math.min(32, perceptualHash.length())));
-
-        // 세그먼트 지문 생성 (고정 간격 pHash, 정밀 비교용)
-        String segmentFingerprint = generateSegmentFingerprint(file);
-
-        // 음성 지문 생성 (고정 간격 스펙트로그램 pHash, 음성 변조 검출용)
-        String audioFingerprint = generateAudioFingerprint(file);
+        // 영상·세그먼트·음성 지문 생성
+        MediaFingerprintService.Fingerprints fingerprints = generateFingerprints(file);
+        String perceptualHash = fingerprints.perceptual();
+        log.debug("Perceptual hash generated - fingerprint={}...", perceptualHash.substring(0, Math.min(32, perceptualHash.length())));
+        String segmentFingerprint = fingerprints.segment();
+        String audioFingerprint = fingerprints.audio();
 
         // 머클트리 구성 + 전자서명
         String merkleRoot = hashService.buildMerkleRoot(perceptualHash, fineHash);
@@ -291,34 +285,12 @@ public class VideoRegisterService {
         }
     }
 
-    private String generatePerceptualHash(MultipartFile file) {
+    private MediaFingerprintService.Fingerprints generateFingerprints(MultipartFile file) {
         try {
-            return perceptualHashService.generateFingerprint(file);
+            return mediaFingerprintService.generate(file);
         } catch (IOException e) {
-            log.error("Failed to generate perceptual hash - fileName={}", file.getOriginalFilename(), e);
+            log.error("Failed to generate media fingerprints - fileName={}", file.getOriginalFilename(), e);
             throw new BusinessException(ErrorCode.VIDEO_PROCESSING_FAILED);
-        }
-    }
-
-    private String generateSegmentFingerprint(MultipartFile file) {
-        try {
-            return videoFingerprintService.generate(file);
-        } catch (IOException e) {
-            // 세그먼트 지문 실패는 등록을 차단하지 않는다 (기존 pHash로 폴백)
-            log.warn("Failed to generate segment fingerprint, proceeding without it - fileName={}",
-                    file.getOriginalFilename(), e);
-            return null;
-        }
-    }
-
-    private String generateAudioFingerprint(MultipartFile file) {
-        try {
-            return audioFingerprintService.generate(file);
-        } catch (IOException e) {
-            // 음성 지문 실패는 등록을 차단하지 않는다 (음성 검증 불가 시 콘텐츠 유사 처리)
-            log.warn("Failed to generate audio fingerprint, proceeding without it - fileName={}",
-                    file.getOriginalFilename(), e);
-            return null;
         }
     }
 

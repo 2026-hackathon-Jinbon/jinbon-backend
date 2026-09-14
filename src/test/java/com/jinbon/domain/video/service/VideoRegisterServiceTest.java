@@ -17,7 +17,6 @@ class VideoRegisterServiceTest {
         MemberRepository members = mock(MemberRepository.class);
         VideoRepository videos = mock(VideoRepository.class);
         HashService hashes = new HashService();
-        PerceptualHashService phash = mock(PerceptualHashService.class);
         SignatureService signatures = mock(SignatureService.class);
         VideoLedgerPort ledger = mock(VideoLedgerPort.class);
         String fingerprint = "v2|1000000|0000000000000000";
@@ -26,15 +25,15 @@ class VideoRegisterServiceTest {
         when(videos.findAll()).thenReturn(List.of(existing));
         when(members.findById(1L)).thenReturn(Optional.of(Member.create(
                 "ci", "holder", "name", "birth", MemberRole.ISSUER, MemberStatus.ACTIVE)));
-        when(phash.generateFingerprint(any(org.springframework.web.multipart.MultipartFile.class)))
-                .thenReturn(fingerprint);
+        MediaFingerprintService fingerprints = mock(MediaFingerprintService.class);
+        when(fingerprints.generate(any(org.springframework.web.multipart.MultipartFile.class)))
+                .thenReturn(new MediaFingerprintService.Fingerprints(fingerprint, null, null));
         when(signatures.sign(anyString())).thenReturn("sig");
         when(videos.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(ledger.register(anyString(), eq("holder"), eq("sig")))
                 .thenReturn(new VideoLedgerPort.Registration("tx", "block"));
         when(ledger.getRecord(anyString())).thenReturn(new VideoLedgerPort.Record(true, true, "holder", "sig"));
-        VideoRegisterService service = new VideoRegisterService(members, videos, hashes, phash,
-                mock(VideoFingerprintService.class), mock(AudioFingerprintService.class),
+        VideoRegisterService service = new VideoRegisterService(members, videos, hashes, fingerprints,
                 signatures, ledger,
                 mock(CredentialIssuancePort.class), mock(VideoCertificateClaims.class),
                 mock(CredentialVerificationPort.class), mock(OpenDidProperties.class), mock(VideoVerifyService.class));

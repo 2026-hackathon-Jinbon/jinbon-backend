@@ -2,6 +2,7 @@ package com.jinbon.domain.video.service;
 
 import com.jinbon.domain.video.dto.GapRange;
 import com.jinbon.domain.video.dto.SegmentMatchResult;
+import org.bytedeco.ffmpeg.global.avutil;
 import org.bytedeco.javacv.FFmpegFrameGrabber;
 import org.bytedeco.javacv.Frame;
 import org.springframework.stereotype.Service;
@@ -110,6 +111,9 @@ public class AudioFingerprintService {
                 || query.hashes().isEmpty() || ref.hashes().isEmpty()) {
             return SegmentMatchResult.unavailable();
         }
+        if (query.intervalMs() <= 0 || query.intervalMs() != ref.intervalMs()) {
+            return SegmentMatchResult.unavailable();
+        }
 
         long intervalMs = query.intervalMs();
         List<Long> q = query.hashes();
@@ -207,6 +211,7 @@ public class AudioFingerprintService {
             // 오디오 정규화: mono, 16kHz
             grabber.setSampleRate(SAMPLE_RATE);
             grabber.setAudioChannels(1);
+            grabber.setSampleFormat(avutil.AV_SAMPLE_FMT_S16);
             grabber.start();
 
             // 오디오 트랙 없음

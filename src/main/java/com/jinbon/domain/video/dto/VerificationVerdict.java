@@ -14,9 +14,9 @@ public enum VerificationVerdict {
     /** 지각해시 + 세그먼트 커버리지 통과 — 플랫폼 재인코딩본 */
     SIMILAR_MATCH(DisplayStatus.AUTHENTICATED),
     /** 원본 후보는 찾았지만 대응 구간의 무변조까지 확정하지 못함 */
-    CONTENT_SIMILAR(DisplayStatus.NOT_AUTHENTICATED),
+    CONTENT_SIMILAR(DisplayStatus.CONTENT_SIMILAR),
     /** 일부 프레임만 유사 — 진본으로 인정하지 않음 */
-    PARTIAL_MATCH(DisplayStatus.NOT_AUTHENTICATED),
+    PARTIAL_MATCH(DisplayStatus.CONTENT_SIMILAR),
     REGISTERED_BUT_REVOKED(DisplayStatus.NOT_AUTHENTICATED),
     CERTIFICATE_MISSING(DisplayStatus.NOT_AUTHENTICATED),
     CERTIFICATE_INVALID(DisplayStatus.NOT_AUTHENTICATED),

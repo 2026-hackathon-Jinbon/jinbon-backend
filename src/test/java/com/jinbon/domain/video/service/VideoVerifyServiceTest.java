@@ -27,7 +27,9 @@ class VideoVerifyServiceTest {
     private final VerificationCache cache = mock(VerificationCache.class);
     private final VideoFingerprintService segFp = spy(new VideoFingerprintService());
     private final AudioFingerprintService audioFp = spy(new AudioFingerprintService());
-    private final VideoVerifyService service = new VideoVerifyService(videos, members, hashes, phash, segFp, audioFp,
+    private final MediaFingerprintService mediaFp = new MediaFingerprintService(phash, segFp, audioFp);
+    private final VideoContentMatchService contentMatcher = new VideoContentMatchService(videos, phash, segFp, audioFp);
+    private final VideoVerifyService service = new VideoVerifyService(videos, members, hashes, mediaFp, contentMatcher,
             signatures, ledger, credentials, claims, mock(VideoSourcePort.class), cache);
     private final Member registrant = Member.create("h1:ci", "holder", "홍길동", "19800101",
             MemberRole.ISSUER, MemberStatus.ACTIVE);
@@ -80,13 +82,26 @@ class VideoVerifyServiceTest {
         assertThat(result.audioMatch()).isNotNull();
     }
 
+    @Test void matchingOriginalSegmentWithAudioIsAuthentic() throws Exception {
+        doReturn("v2|1000000|0000000000000000").when(phash).generateFingerprint(file);
+        doReturn("seg-v1|1000000|1000|0000000000000000").when(segFp).generate(file);
+        doReturn("aud-v1|1000000|1000|00000000000000ff").when(audioFp).generate(file);
+
+        var result = service.verify(file);
+
+        assertThat(result.verdict()).isEqualTo(VerificationVerdict.SIMILAR_MATCH);
+        assertThat(result.authentic()).isTrue();
+        assertThat(result.message()).contains("원본");
+        assertThat(result.segmentMatch().matchedStartMs()).isEqualTo(0L);
+    }
+
     @Test void videoMatchWithoutAudioIsContentSimilar() throws Exception {
         // 음성 지문 생성 실패 → null
         doThrow(new java.io.IOException("no audio")).when(audioFp).generate(file);
         var result = service.verify(file);
         assertThat(result.verdict()).isEqualTo(VerificationVerdict.CONTENT_SIMILAR);
         assertThat(result.authentic()).isFalse();
-        assertThat(result.displayStatus()).isEqualTo(DisplayStatus.NOT_AUTHENTICATED);
+        assertThat(result.displayStatus()).isEqualTo(DisplayStatus.CONTENT_SIMILAR);
     }
 
     @Test void videoMatchWithAudioMismatchIsContentSimilar() throws Exception {
@@ -119,7 +134,7 @@ class VideoVerifyServiceTest {
         var result = service.verify(file);
         assertThat(result.verdict()).isEqualTo(VerificationVerdict.PARTIAL_MATCH);
         assertThat(result.authentic()).isFalse();
-        assertThat(result.displayStatus()).isEqualTo(DisplayStatus.NOT_AUTHENTICATED);
+        assertThat(result.displayStatus()).isEqualTo(DisplayStatus.CONTENT_SIMILAR);
     }
 
     @Test void exactMatchStillRequiresValidCredential() {

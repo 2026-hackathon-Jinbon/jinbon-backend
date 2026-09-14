@@ -102,6 +102,9 @@ public class VideoFingerprintService {
                 || query.hashes().isEmpty() || ref.hashes().isEmpty()) {
             return SegmentMatchResult.unavailable();
         }
+        if (query.intervalMs() <= 0 || query.intervalMs() != ref.intervalMs()) {
+            return SegmentMatchResult.unavailable();
+        }
 
         long intervalMs = query.intervalMs();
         List<Long> q = query.hashes();
@@ -211,9 +214,7 @@ public class VideoFingerprintService {
                 Frame frame = grabber.grabImage();
                 BufferedImage image = frame == null ? null : converter.convert(frame);
                 if (image == null) {
-                    // 세그먼트 추출 실패 시 0으로 채워 시간 정렬을 유지한다
-                    hashes.add(0L);
-                    continue;
+                    throw new IOException("Could not extract comparison frame at segment " + i);
                 }
                 hashes.add(computePHash(image));
             }
