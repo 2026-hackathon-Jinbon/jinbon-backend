@@ -84,6 +84,17 @@ public class OpenDidIssuerClient {
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> registered = (List<Map<String, Object>>) holders.get("content");
 
+            // DID로 못 찾으면 PII로 재검색 (앱 재설치 후 DID rebind 케이스)
+            if (registered == null || registered.isEmpty()) {
+                Map<String, Object> byPii = api.searchHolders("pii", pii, 1);
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> piiResult = (List<Map<String, Object>>) byPii.get("content");
+                if (piiResult != null && !piiResult.isEmpty()) {
+                    registered = piiResult;
+                    log.info("Issuer holder found by PII (DID rebind) - holderDid={}", holderDid);
+                }
+            }
+
             if (registered == null || registered.isEmpty()) {
                 api.registerHolder(Map.of(
                         "did", holderDid,
