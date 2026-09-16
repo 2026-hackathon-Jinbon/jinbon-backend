@@ -289,7 +289,11 @@
                 try {
                     await verifyAuth();
                 } catch (e) {
-                    if (e.code !== 'A007') {
+                    // 딥링크로 신분증 앱이 열리면 WebView가 백그라운드로 내려가면서
+                    // 진행 중이던 fetch가 취소된다. 이때는 code가 없으므로 실패로
+                    // 보지 않고 다음 주기에 다시 시도한다.
+                    // 서버가 코드를 내려준 경우에만 최종 실패로 판정한다.
+                    if (e.code && e.code !== 'A007') {
                         stopPolling();
                         setStatus(verificationErrorMessage(e.code), 'error');
                         resetButton();
