@@ -60,12 +60,13 @@ public class SecurityConfig {
                         .requestMatchers("/api/verify/**").permitAll()
                         .requestMatchers("/api/kakao/skill/**").permitAll()
                         .requestMatchers("/health").permitAll()
-                        .requestMatchers("/favicon.ico").permitAll();
+                        .requestMatchers("/favicon.ico").permitAll()
+                        // 앱이 회원가입·로그인 시 WebView로 여는 화면이므로 운영에서도 공개해야 한다.
+                        .requestMatchers("/auth.html").permitAll();
 
-                    // Swagger/인증 테스트 페이지: 개발 환경에서만 허용
+                    // Swagger: 개발 환경에서만 허용
                     if (isDev) {
-                        auth.requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                            .requestMatchers("/auth.html").permitAll();
+                        auth.requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll();
                     }
 
                     // 나머지는 인증 필요

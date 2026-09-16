@@ -6,8 +6,11 @@
 # 환경에 따라 달라지는 "동작"만 둔다.
 #
 # 주의: 프로파일을 지정하지 않으면 SecurityConfig의 isDev가 true가 되어
-#       Swagger UI(/swagger-ui/**, /v3/api-docs/**)와 /auth.html이 공개된다.
+#       Swagger UI(/swagger-ui/**, /v3/api-docs/**)가 공개된다.
 #       배포 시 이 프로파일 활성화는 선택이 아니라 필수.
+#
+#       단 /auth.html은 앱이 회원가입·로그인 WebView로 여는 화면이라
+#       프로파일과 무관하게 항상 공개된다.
 
 spring:
   jpa:
