@@ -1,6 +1,5 @@
 package com.jinbon.domain.auth.controller;
 
-import com.jinbon.domain.auth.dto.AuthResponse;
 import com.jinbon.domain.auth.dto.CompleteSignupRequest;
 import com.jinbon.domain.auth.dto.SignupIdentityResponse;
 import com.jinbon.domain.auth.dto.VerifyRequest;
@@ -43,9 +42,9 @@ public class SignupController {
     }
 
     @PostMapping("/did/complete")
-    @Operation(summary = "[STEP 4] Wallet DID 연결 및 회원가입 완료", description = "signupToken과 Wallet에서 생성·등록한 DID를 연결하고 회원을 ACTIVE/ISSUER로 전환한 뒤 JWT를 발급합니다.")
-    public ResponseEntity<CommonResponse<AuthResponse>> complete(@Valid @RequestBody CompleteSignupRequest request) {
-        return ResponseEntity.ok(CommonResponse.success(
-                authService.completeSignup(request.signupToken(), request.did())));
+    @Operation(summary = "[STEP 4] Wallet DID 연결 및 회원가입 완료", description = "signupToken과 Wallet에서 생성·등록한 DID를 연결하고 회원을 ACTIVE/ISSUER로 전환합니다. 로그인은 별도로 수행해야 합니다.")
+    public ResponseEntity<CommonResponse<Void>> complete(@Valid @RequestBody CompleteSignupRequest request) {
+        authService.completeSignup(request.signupToken(), request.did());
+        return ResponseEntity.ok(CommonResponse.success(null));
     }
 }

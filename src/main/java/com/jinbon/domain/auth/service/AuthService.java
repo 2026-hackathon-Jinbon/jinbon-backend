@@ -167,8 +167,9 @@ public class AuthService {
         return memberRepository.findByCiHash(ciHash);
     }
 
+    /** 회원가입을 완료한다. DID를 연결하고 ACTIVE로 전환하되, 로그인은 별도로 수행해야 한다. */
     @Transactional
-    public AuthResponse completeSignup(String signupToken, String did) {
+    public void completeSignup(String signupToken, String did) {
         if (!jwtTokenProvider.validateToken(signupToken)
                 || !"signup".equals(jwtTokenProvider.getTokenType(signupToken))) {
             throw new BusinessException(ErrorCode.NOT_A_SIGNUP_TOKEN);
@@ -185,12 +186,7 @@ public class AuthService {
                     .ifPresent(owner -> { throw new BusinessException(ErrorCode.DID_ALREADY_REGISTERED); });
             member.updateDid(did);
         }
-
-        String role = member.getRole().name();
-        String accessToken = jwtTokenProvider.createAccessToken(member.getId(), role);
-        String refreshToken = jwtTokenProvider.createRefreshToken(member.getId(), role);
-        refreshTokenStore.save(member.getId(), refreshToken);
-        return authResponse(member, accessToken, refreshToken, null);
+        log.info("Signup completed - memberId={}, did={}", member.getId(), did);
     }
 
     /**
