@@ -255,16 +255,16 @@ public class VideoVerifyService {
             message = "등록된 원본 파일과 정확히 일치합니다.";
         } else if (matchedVerdict == VerificationVerdict.CONTENT_SIMILAR) {
             message = "등록 원본 후보는 찾았지만 대응 구간의 무변조까지 확정하지 못했습니다.";
-            notice = buildContentSimilarNotice(segmentResult);
+            notice = buildContentSimilarNotice(segmentResult, audioResult);
         } else if (matchedVerdict == VerificationVerdict.PARTIAL_MATCH) {
             message = "등록 영상과 일부 프레임이 유사하지만 원본 일치는 확인할 수 없습니다.";
             notice = "영상 길이·순서·구간 차이가 있거나 비교 정보가 부족합니다. 편집 여부를 확정하는 판정은 아닙니다.";
         } else {
-            message = "등록된 원본과 같은 내용의 영상입니다. 플랫폼 재인코딩 등으로 파일은 다를 수 있습니다.";
+            message = "등록 원본과 영상·음성 유사도 기준을 통과했습니다.";
             notice = isSourceSegment(segmentResult)
-                    ? String.format("등록 원본의 %d~%dms 구간과 영상·음성이 일치합니다.",
+                    ? String.format("등록 원본의 %d~%dms 대응 구간을 비교했습니다. 영상·음성 지문의 시간 오프셋이 일치합니다. 생략된 맥락이나 모든 변조의 부재를 보증하지 않습니다.",
                     segmentResult.matchedStartMs(), segmentResult.matchedEndMs())
-                    : "영상 길이와 순서대로 추출한 프레임을 비교한 결과입니다.";
+                    : "영상·음성 지문의 유사도와 원본 대응 시간 오프셋을 확인한 결과입니다. 모든 프레임·음성의 무변조를 보증하지 않습니다.";
         }
         log.info("Video verification completed - videoId={}, authentic={}, blockchainVerified={}, vcVerified={}",
                 video.getId(), authentic, blockchainVerified, vcVerified);
@@ -275,14 +275,19 @@ public class VideoVerifyService {
                 message, notice, segmentResult, audioResult);
     }
 
-    private String buildContentSimilarNotice(SegmentMatchResult seg) {
+    private String buildContentSimilarNotice(SegmentMatchResult seg, SegmentMatchResult audio) {
         if (seg == null) {
             return "영상 길이와 순서대로 추출한 프레임을 비교한 결과입니다.";
         }
+        String audioNotice = audio == null || audio.totalRefSegments() == 0
+                ? " 음성 비교 정보가 부족합니다."
+                : seg.bestOffsetMs() != audio.bestOffsetMs()
+                ? " 영상과 음성의 원본 대응 시간 오프셋이 달라 진본 확인을 보류합니다."
+                : " 영상·음성 유사도 또는 순서 기준을 충족하지 못했습니다.";
         return String.format(
                 "세그먼트 커버리지 %.0f%%, 원본 대응 구간 %d~%dms, 불일치 구간 %d개.",
                 seg.coverage() * 100, seg.matchedStartMs(), seg.matchedEndMs(),
-                seg.unmatchedRanges().size());
+                seg.unmatchedRanges().size()) + audioNotice;
     }
 
     private boolean isSourceSegment(SegmentMatchResult seg) {

@@ -75,7 +75,10 @@ public class VideoContentMatchService {
                 && audio.coverage() >= AUDIO_COVERAGE_HIGH
                 && audio.orderPreserved();
 
-        if (videoHigh && audioHigh) {
+        // 두 지문이 원본의 같은 시간 위치에 대응할 때만 승인한다.
+        // 반복 장면 등으로 최적 오프셋이 다르면 보수적으로 콘텐츠 유사로 남긴다.
+        boolean sameSourceTime = audioAvailable && video.bestOffsetMs() == audio.bestOffsetMs();
+        if (videoHigh && audioHigh && sameSourceTime) {
             // 전체 영상 또는 등록 원본의 연속 구간 인증
             return VerificationVerdict.SIMILAR_MATCH;
         }

@@ -85,17 +85,19 @@ public class KakaoSkillController {
         if (result.authentic()) {
             String message = switch (verdict) {
                 case EXACT_MATCH -> "등록된 원본 영상과 정확히 일치해요.";
-                case SAME_CONTENT -> "파일은 달라도 등록된 영상과 같은 콘텐츠로 확인됐어요.";
-                case SIMILAR_MATCH -> "등록된 영상과 유사한 콘텐츠로 확인됐어요. 재인코딩이나 일부 변환이 있었을 수 있어요.";
+                case SAME_CONTENT, SIMILAR_MATCH -> "등록 원본과 영상·음성 유사도 기준을 통과했어요.";
                 default -> result.message();
             };
 
             StringBuilder builder = new StringBuilder();
-            builder.append("✅ 진본으로 확인됐어요.\n\n");
+            builder.append("✅ 진본 확인 완료\n\n");
             builder.append(message);
+            builder.append("\n확인 방식: ").append(verdict == VerificationVerdict.EXACT_MATCH
+                    ? "원본 파일 정확 일치" : "영상·음성 비교");
 
             if (result.registrantName() != null) {
-                builder.append("\n\n등록자: ").append(result.registrantName());
+                builder.append("\n\n등록자 표시명: ").append(result.registrantName());
+                builder.append("\n표시명은 기관 소속·직함의 인증을 뜻하지 않습니다.");
             }
             if (result.registeredAt() != null) {
                 builder.append("\n등록 시각: ").append(result.registeredAt().toLocalDate())
@@ -104,6 +106,7 @@ public class KakaoSkillController {
             if (result.videoId() != null) {
                 builder.append("\n등록 영상 ID: ").append(result.videoId());
             }
+            if (result.notice() != null) builder.append("\n\n").append(result.notice());
 
             return builder.toString();
         }

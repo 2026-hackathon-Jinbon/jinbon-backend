@@ -7,7 +7,7 @@
 ## 서비스 개요
 
 **진본**은 영상 콘텐츠의 원본 여부를 블록체인과 DID 기술로 증명하는 플랫폼입니다.
-공인(Issuer)이 영상을 등록하면 해시와 블록체인으로 영상 무결성을 기록하고, 사용자가 Wallet에서 VC(Verifiable Credential)를 발급받아 등록 사실을 증명할 수 있습니다.
+공인 등록자(모바일 신분증으로 본인확인을 완료한 진본 등록자)가 영상을 등록하면 해시와 블록체인으로 영상 무결성을 기록하고, 사용자가 Wallet에서 VC(Verifiable Credential)를 발급받아 등록 사실을 증명할 수 있습니다. 기관 소속·공식 발행 권한 인증은 별도입니다.
 
 ## 핵심 프로세스
 
@@ -257,14 +257,16 @@ cp .env.example .env
 
 ### 영상 검증 판정
 
-검증 API의 `authentic=true`는 SHA-256 원본 일치와 블록체인·VC 검증을 모두 통과한 경우에만 반환합니다.
-콘텐츠 유사는 `authentic=false`이며, 앱·확장 프로그램은 `displayStatus`로 원본 일치(초록), 유사·부분 유사(주황)를 구분합니다.
+검증 API의 `authentic=true`는 파일 정확 일치 또는 영상·음성 유사도 기준 통과에 더해 블록체인·VC 검증을 모두 통과한 경우 반환합니다.
+유사도 경로는 영상 커버리지 95%, 음성 커버리지 90% 이상 및 순서 보존과 동일한 원본 대응 시간 오프셋을 요구합니다. 이 수치는 탐지 정확도가 아닙니다. 반복 장면 등으로 최적 오프셋이 다르면 보수적으로 확인을 보류합니다.
+앱·웹·확장은 `진본 확인 완료` 표시를 유지하고 확인 방식을 `원본 파일 정확 일치` 또는 `영상·음성 비교`로 구분합니다. 유사 후보만 있는 `CONTENT_SIMILAR`·`PARTIAL_MATCH`는 진본 확인 보류입니다.
 등록 증거는 `blockchainVerified`, `vcVerified`, `vcClaimsBound`로 별도 표시합니다.
 
 | verdict | 의미 |
 |---------|------|
 | `EXACT_MATCH` | 등록된 원본 파일과 SHA-256이 정확히 일치 |
-| `SIMILAR_MATCH` | 길이·프레임 순서·일치율 기준 충족, 재인코딩 또는 변환 가능 (`CONTENT_SIMILAR`) |
+| `SIMILAR_MATCH` | 영상·음성 유사도와 동일한 원본 대응 시간 오프셋 기준 통과 (`AUTHENTICATED`, 등록 증거 유효 시) |
+| `CONTENT_SIMILAR` | 후보는 찾았지만 비교 기준 미달, 시간 오프셋 불일치 또는 정보 부족 |
 | `PARTIAL_MATCH` | 일부 프레임 유사, 길이·순서·구간 차이 또는 비교 정보 부족 (`PARTIAL_SIMILAR`) |
 | `CERTIFICATE_MISSING` | 보증서 미발급 |
 | `CERTIFICATE_INVALID` | 보증서 검증 실패 |

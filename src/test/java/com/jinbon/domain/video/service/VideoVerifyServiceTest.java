@@ -104,6 +104,34 @@ class VideoVerifyServiceTest {
         assertThat(result.displayStatus()).isEqualTo(DisplayStatus.CONTENT_SIMILAR);
     }
 
+    @Test void matchingVideoAndAudioFromDifferentSourceTimesIsNotAuthentic() throws Exception {
+        doReturn("v2|1000000|0000000000000000").when(phash).generateFingerprint(file);
+        doReturn("seg-v1|1000000|1000|0000000000000000").when(segFp).generate(file);
+        doReturn("aud-v1|1000000|1000|ffffffffffffff00").when(audioFp).generate(file);
+
+        var result = service.verify(file);
+
+        assertThat(result.segmentMatch().coverage()).isEqualTo(1.0);
+        assertThat(result.audioMatch().coverage()).isEqualTo(1.0);
+        assertThat(result.segmentMatch().bestOffsetMs()).isEqualTo(0);
+        assertThat(result.audioMatch().bestOffsetMs()).isEqualTo(1000);
+        assertThat(result.authentic()).isFalse();
+        assertThat(result.verdict()).isEqualTo(VerificationVerdict.CONTENT_SIMILAR);
+    }
+
+    @Test void matchingVideoAndAudioAtSameNonzeroSourceTimeIsAuthentic() throws Exception {
+        doReturn("v2|1000000|ffffffffffffffff").when(phash).generateFingerprint(file);
+        doReturn("seg-v1|1000000|1000|ffffffffffffffff").when(segFp).generate(file);
+        doReturn("aud-v1|1000000|1000|ffffffffffffff00").when(audioFp).generate(file);
+
+        var result = service.verify(file);
+
+        assertThat(result.segmentMatch().bestOffsetMs()).isEqualTo(1000);
+        assertThat(result.audioMatch().bestOffsetMs()).isEqualTo(1000);
+        assertThat(result.authentic()).isTrue();
+        assertThat(result.verdict()).isEqualTo(VerificationVerdict.SIMILAR_MATCH);
+    }
+
     @Test void videoMatchWithAudioMismatchIsContentSimilar() throws Exception {
         // 제출 영상의 음성이 원본과 완전히 다름 (해밍 거리 큼)
         doReturn("aud-v1|2000000|1000|aaaaaaaaaaaaaaaa,5555555555555555").when(audioFp).generate(file);
