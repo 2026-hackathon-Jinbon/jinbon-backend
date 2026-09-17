@@ -20,6 +20,9 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class OpenDidIssuerClient {
 
+    /** 홀더 전체 조회 시 한 번에 받아올 최대 건수 (Issuer 검색 필터가 동작하지 않아 전량 대조가 필요하다) */
+    private static final int HOLDER_PAGE_SIZE = 1000;
+
     private final OpenDidIssuerApi api;
     private final OpenDidProperties properties;
     private final ObjectMapper objectMapper;
@@ -80,22 +83,9 @@ public class OpenDidIssuerClient {
         String vcSchemaId = profile.get("vcSchemaId").toString();
         try {
             String userInfo = objectMapper.writeValueAsString(claims);
-            Map<String, Object> holders = api.searchHolders("did", holderDid, 1);
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> registered = (List<Map<String, Object>>) holders.get("content");
+            Map<String, Object> existing = findHolderByPii(pii, vcSchemaId);
 
-            // DID로 못 찾으면 PII로 재검색 (앱 재설치 후 DID rebind 케이스)
-            if (registered == null || registered.isEmpty()) {
-                Map<String, Object> byPii = api.searchHolders("pii", pii, 1);
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> piiResult = (List<Map<String, Object>>) byPii.get("content");
-                if (piiResult != null && !piiResult.isEmpty()) {
-                    registered = piiResult;
-                    log.info("Issuer holder found by PII (DID rebind) - holderDid={}", holderDid);
-                }
-            }
-
-            if (registered == null || registered.isEmpty()) {
+            if (existing == null) {
                 api.registerHolder(Map.of(
                         "did", holderDid,
                         "pii", pii,
@@ -104,9 +94,11 @@ public class OpenDidIssuerClient {
                 ));
                 log.info("Issuer holder registered - holderDid={}, vcSchemaId={}", holderDid, vcSchemaId);
             } else {
-                Map<String, Object> holder = registered.getFirst();
-                Object id = holder.get("id");
-                Object numericSchemaId = holder.get("vcSchemaId");
+                // PII가 같은 행을 DID만 새 값으로 갱신한다. registerHolder는 DID가 있으면
+                // DID로만 조회하므로 rebind된 DID를 못 찾고 같은 PII의 행을 새로 만든다
+                // (Issuer가 pii+vcSchemaId를 단일 결과로 기대해 발급 시 예외가 난다).
+                Object id = existing.get("id");
+                Object numericSchemaId = existing.get("vcSchemaId");
                 if (id == null || numericSchemaId == null) {
                     throw new IllegalStateException("Issuer holder response is missing id or vcSchemaId");
                 }
@@ -117,11 +109,34 @@ public class OpenDidIssuerClient {
                         "vcSchemaId", numericSchemaId,
                         "userInfo", userInfo
                 ));
-                log.info("Issuer holder claims updated - holderDid={}, vcSchemaId={}", holderDid, vcSchemaId);
+                log.info("Issuer holder claims updated - holderId={}, holderDid={}, vcSchemaId={}",
+                        id, holderDid, vcSchemaId);
             }
         } catch (JacksonException e) {
             throw new IllegalStateException("Failed to serialize VC claims", e);
         }
+    }
+
+    /**
+     * PII와 스키마가 일치하는 홀더를 찾는다. 없으면 null.
+     *
+     * Issuer 2.0.0의 홀더 검색은 searchKey로 vcSchemaId와 title만 지원하고
+     * 그 외 값은 predicate가 FALSE로 접혀 항상 빈 목록을 반환한다
+     * ("did"/"pii"는 정렬 키로만 쓰인다). 그래서 검색 없이 전체를 받아
+     * 여기서 직접 대조한다.
+     */
+    private Map<String, Object> findHolderByPii(String pii, String vcSchemaId) {
+        Map<String, Object> holders = api.listHolders(HOLDER_PAGE_SIZE);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> content = (List<Map<String, Object>>) holders.get("content");
+        if (content == null) {
+            return null;
+        }
+        return content.stream()
+                .filter(holder -> pii.equals(String.valueOf(holder.get("pii"))))
+                .filter(holder -> vcSchemaId.equals(String.valueOf(holder.get("vcSchemaName"))))
+                .findFirst()
+                .orElse(null);
     }
 
     public IssueOffer createIssueOffer() {
