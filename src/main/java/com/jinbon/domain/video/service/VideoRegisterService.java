@@ -184,14 +184,23 @@ public class VideoRegisterService {
         }
         Video video = findOwnedVideo(videoId, memberId);
         if (video.getVcOfferId() == null || !video.getVcOfferId().equals(offerId)) {
+            log.warn("VC offer mismatch - videoId={}, expected={}, received={}",
+                    videoId, video.getVcOfferId(), offerId);
             throw new BusinessException(ErrorCode.VC_ISSUANCE_CONTEXT_MISMATCH);
         }
         verifyBlockchainEvidence(video);
         if (!videoCertificateClaims.matchesSnapshot(video)) {
+            log.warn("VC claim snapshot mismatch - videoId={}, storedSnapshot={}, vcIssuerDid={}",
+                    videoId, video.getVcClaimSnapshotHash(), video.getVcIssuerDid());
             throw new BusinessException(ErrorCode.VC_ISSUANCE_CONTEXT_MISMATCH);
         }
         VerificationResult verification = credentialVerificationPort.verify(vcId, credential);
         if (!videoCertificateClaims.matchesCredential(video, verification)) {
+            log.warn("VC does not match video context - videoId={}, status={}, vcIssuerDid={}/{}, subjectDid={}/{}",
+                    videoId,
+                    verification == null ? null : verification.status(),
+                    video.getVcIssuerDid(), verification == null ? null : verification.issuerDid(),
+                    video.getIssuerDid(), verification == null ? null : verification.subjectDid());
             throw new BusinessException(ErrorCode.VC_VERIFICATION_FAILED);
         }
         video.completeVcIssuance(vcId, offerId, credential);
