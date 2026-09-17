@@ -7,6 +7,7 @@ import com.jinbon.domain.video.port.VideoLedgerPort;
 import com.jinbon.global.config.BlockchainProperties;
 import com.jinbon.global.config.OpenDidProperties;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -19,6 +20,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /** 온체인 영상 등록 사실을 증명하는 VC의 클레임과 결속 해시를 생성한다. */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class VideoCertificateClaims {
@@ -96,10 +98,17 @@ public class VideoCertificateClaims {
             return false;
         }
         try {
-            String current = create(video).snapshotHash(video.getVcIssuerDid());
-            return MessageDigest.isEqual(
+            Draft draft = create(video);
+            String current = draft.snapshotHash(video.getVcIssuerDid());
+            boolean matches = MessageDigest.isEqual(
                     current.getBytes(StandardCharsets.UTF_8),
                     video.getVcClaimSnapshotHash().getBytes(StandardCharsets.UTF_8));
+            if (!matches) {
+                log.warn("Snapshot recomputation differs - videoId={}, stored={}, current={}, canonical=[{}], credentialIssuerDid={}",
+                        video.getId(), video.getVcClaimSnapshotHash(), current,
+                        draft.canonicalClaims().replace("\n", "|"), video.getVcIssuerDid());
+            }
+            return matches;
         } catch (IllegalStateException e) {
             return false;
         }
