@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -42,9 +43,19 @@ public class VideoCertificateClaims {
         claims.put(key("contractAddress"), blockchainProperties.getContractAddress());
         claims.put(key("transactionHash"), video.getTxHash());
         claims.put(key("blockNumber"), video.getBlockNumber());
-        claims.put(key("registeredAt"), video.getRegisteredAt().toString());
+        claims.put(key("registeredAt"), registeredAt(video));
         claims.put(key("schemaVersion"), Integer.toString(SCHEMA_VERSION));
         return new Draft(Map.copyOf(claims), canonicalValue(video, chainId));
+    }
+
+    /**
+     * 등록 시각을 마이크로초로 잘라 문자열화한다.
+     *
+     * DB timestamp(6)가 나노초를 버리기 때문에, 발급 준비 때의 메모리 값과
+     * 완료 때 DB에서 읽은 값이 그대로는 다른 문자열이 되어 스냅샷 대조가 실패한다.
+     */
+    private String registeredAt(Video video) {
+        return video.getRegisteredAt().truncatedTo(ChronoUnit.MICROS).toString();
     }
 
     private String key(String claimId) {
@@ -76,7 +87,7 @@ public class VideoCertificateClaims {
                 blockchainProperties.getContractAddress(),
                 video.getTxHash(),
                 video.getBlockNumber(),
-                video.getRegisteredAt().toString());
+                registeredAt(video));
     }
 
     /** 발급 준비 당시 결속한 클레임과 현재 온체인 등록 정보가 동일한지 확인한다. */
