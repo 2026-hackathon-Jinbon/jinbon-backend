@@ -15,6 +15,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 
 /**
  * 영상 엔티티.
@@ -141,7 +142,10 @@ public class Video {
         video.signature = signature;
         video.version = version;
         video.active = true;
-        video.registeredAt = LocalDateTime.now();
+        // DB timestamp(6)는 마이크로초까지만 보존한다. 나노초를 남겨두면 발급 준비 때
+        // 메모리 값으로 만든 claim 스냅샷과 완료 때 DB에서 읽은 값이 달라져
+        // matchesSnapshot이 영구히 실패한다.
+        video.registeredAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
         video.vcIssuanceStatus = VcIssuanceStatus.NOT_REQUESTED;
         return video;
     }

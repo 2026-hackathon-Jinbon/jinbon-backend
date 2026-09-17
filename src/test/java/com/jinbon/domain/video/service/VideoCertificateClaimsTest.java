@@ -7,6 +7,9 @@ import com.jinbon.global.config.BlockchainProperties;
 import com.jinbon.global.config.OpenDidProperties;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -105,9 +108,36 @@ class VideoCertificateClaimsTest {
         assertThat(claims.matchesCredential(video, result)).isFalse();
     }
 
+    @Test
+    void matchesSnapshotAfterDatabaseTruncatesSubMicrosecondPrecision() {
+        Video video = registeredVideo();
+        String snapshot = claims.create(video).snapshotHash("did:omn:issuer");
+        video.markVcPending("offer", "plan", "did:omn:issuer", snapshot,
+                VideoCertificateClaims.SCHEMA_VERSION, VideoCertificateClaims.ASSURANCE_TYPE);
+
+        // DB timestamp(6)는 마이크로초까지만 저장하므로, 완료 요청에서 재조회한
+        // 엔티티의 registeredAt은 나노초가 잘려 있다.
+        setRegisteredAt(video, video.getRegisteredAt().truncatedTo(ChronoUnit.MICROS));
+
+        assertThat(claims.matchesSnapshot(video)).isTrue();
+    }
+
     private Video registeredVideo() {
-        return Video.create("title", "did:omn:holder", 1L,
+        Video video = Video.create("title", "did:omn:holder", 1L,
                 "perceptual", null, null, "fine", "root", "path",
                 "0x10", "0xtx", "signature", 1);
+        // 나노초가 남아 있는 상태를 강제해 절삭 전후 차이를 검증할 수 있게 한다.
+        setRegisteredAt(video, LocalDateTime.of(2026, 9, 17, 3, 14, 37, 535_155_123));
+        return video;
+    }
+
+    private static void setRegisteredAt(Video video, LocalDateTime value) {
+        try {
+            Field field = Video.class.getDeclaredField("registeredAt");
+            field.setAccessible(true);
+            field.set(video, value);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to set registeredAt", e);
+        }
     }
 }
