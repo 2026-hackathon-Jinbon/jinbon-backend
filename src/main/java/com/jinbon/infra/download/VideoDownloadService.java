@@ -60,7 +60,7 @@ public class VideoDownloadService implements VideoSourcePort {
                     "--socket-timeout", "15",
                     "--retries", "2",
                     "--max-filesize", String.valueOf(MAX_FILE_SIZE),
-                    "-f", "best[height<=1080]",
+                    "-f", "bv*[height<=1080]+ba/b[height<=1080]",
                     "-o", outputTemplate,
                     url
             );

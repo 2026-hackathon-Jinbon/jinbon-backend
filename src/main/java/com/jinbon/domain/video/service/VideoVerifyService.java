@@ -254,7 +254,7 @@ public class VideoVerifyService {
         } else if (matchedVerdict == VerificationVerdict.EXACT_MATCH) {
             message = "등록된 원본 파일과 정확히 일치합니다.";
         } else if (matchedVerdict == VerificationVerdict.CONTENT_SIMILAR) {
-            message = "등록 원본 후보는 찾았지만 대응 구간의 무변조까지 확정하지 못했습니다.";
+            message = "등록 원본 후보는 찾았지만 영상·음성 비교 기준을 충족하지 못해 진본으로 인증하지 않습니다.";
             notice = buildContentSimilarNotice(segmentResult, audioResult);
         } else if (matchedVerdict == VerificationVerdict.PARTIAL_MATCH) {
             message = "등록 영상과 일부 프레임이 유사하지만 원본 일치는 확인할 수 없습니다.";
@@ -277,17 +277,25 @@ public class VideoVerifyService {
 
     private String buildContentSimilarNotice(SegmentMatchResult seg, SegmentMatchResult audio) {
         if (seg == null) {
-            return "영상 길이와 순서대로 추출한 프레임을 비교한 결과입니다.";
+            return "영상 구간 비교 정보가 부족해 진본으로 인증하지 않습니다.";
         }
-        String audioNotice = audio == null || audio.totalRefSegments() == 0
-                ? " 음성 비교 정보가 부족합니다."
-                : seg.bestOffsetMs() != audio.bestOffsetMs()
-                ? " 영상과 음성의 원본 대응 시간 오프셋이 달라 진본 확인을 보류합니다."
-                : " 영상·음성 유사도 또는 순서 기준을 충족하지 못했습니다.";
-        return String.format(
-                "세그먼트 커버리지 %.0f%%, 원본 대응 구간 %d~%dms, 불일치 구간 %d개.",
-                seg.coverage() * 100, seg.matchedStartMs(), seg.matchedEndMs(),
-                seg.unmatchedRanges().size()) + audioNotice;
+        String videoNotice = String.format(
+                "영상 구간 일치율 %.1f%% (%d/%d), 원본 대응 구간 %d~%dms.",
+                seg.coverage() * 100, seg.matchedSegments(), seg.totalQuerySegments(),
+                seg.matchedStartMs(), seg.matchedEndMs());
+        if (audio == null || audio.totalRefSegments() == 0 || audio.totalQuerySegments() == 0) {
+            return videoNotice + " 음성 비교 정보가 부족해 진본으로 인증하지 않습니다.";
+        }
+        String comparisonNotice = videoNotice + String.format(
+                " 음성 구간 일치율 %.1f%% (%d/%d).",
+                audio.coverage() * 100, audio.matchedSegments(), audio.totalQuerySegments());
+        if (audio.coverage() < 1.0 || !audio.orderPreserved()) {
+            return comparisonNotice + " 음성 비교 기준을 충족하지 못해 진본으로 인증하지 않습니다.";
+        }
+        if (seg.bestOffsetMs() != audio.bestOffsetMs()) {
+            return comparisonNotice + " 영상과 음성의 원본 대응 시점이 달라 진본으로 인증하지 않습니다.";
+        }
+        return comparisonNotice + " 영상 비교 기준을 충족하지 못해 진본으로 인증하지 않습니다.";
     }
 
     private boolean isSourceSegment(SegmentMatchResult seg) {
