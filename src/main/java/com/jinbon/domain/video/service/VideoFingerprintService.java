@@ -30,7 +30,8 @@ import java.util.List;
  * </ul>
  *
  * <h3>세그먼트 지문 포맷</h3>
- * <pre>seg-v1|{durationMicros}|{intervalMs}|{hash0},{hash1},{hash2},...</pre>
+ * <pre>seg-v3|{durationMicros}|{intervalMs}|{hash0:nearby0},{hash1:nearby1},...</pre>
+ * v3는 면적 평균 축소와 인접 프레임을 사용한다. 기존 v1/v2 지문도 읽을 수 있다.
  *
  * <h3>비교 알고리즘</h3>
  * <ol>
@@ -46,7 +47,7 @@ public class VideoFingerprintService {
     static final int DEFAULT_INTERVAL_MS = 1000;
 
     /** 세그먼트 지문 포맷 접두어 */
-    private static final String FORMAT_PREFIX = "seg-v1";
+    private static final String FORMAT_PREFIX = "seg-v3";
 
     /** DCT 계산용 이미지 크기 */
     private static final int DCT_SIZE = 32;
@@ -65,7 +66,8 @@ public class VideoFingerprintService {
     public String generate(MultipartFile file) throws IOException {
         File temp = File.createTempFile("jinbon-seg-", ".tmp");
         try {
-            file.transferTo(temp);
+            // 후속 음성 추출에서도 업로드 원본을 읽을 수 있도록 복사한다.
+            file.transferTo(temp.toPath());
             return extractSegments(temp);
         } finally {
             Files.deleteIfExists(temp.toPath());
@@ -120,7 +122,7 @@ public class VideoFingerprintService {
             for (int i = 0; i < m; i++) {
                 int ri = i + offset;
                 if (ri < 0 || ri >= n) continue;
-                if (Long.bitCount(q.get(i) ^ r.get(ri)) <= MATCH_THRESHOLD) {
+                if (matches(query.samples().get(i), ref.samples().get(ri))) {
                     matchCount++;
                 }
             }
@@ -139,7 +141,7 @@ public class VideoFingerprintService {
         for (int i = 0; i < m; i++) {
             int ri = i + bestOffset;
             if (ri < 0 || ri >= n) continue;
-            if (Long.bitCount(q.get(i) ^ r.get(ri)) <= MATCH_THRESHOLD) {
+            if (matches(query.samples().get(i), ref.samples().get(ri))) {
                 matched[i] = true;
                 matchedCount++;
                 // 순서 검증: 일치한 원본 인덱스가 단조 증가하는지
@@ -191,15 +193,20 @@ public class VideoFingerprintService {
      * (각 구간의 중앙 시점을 사용하여 경계 노이즈를 줄인다)
      */
     private String extractSegments(File videoFile) throws IOException {
-        List<Long> hashes = new ArrayList<>();
+        List<String> segments = new ArrayList<>();
         try (FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(videoFile);
              Java2DFrameConverter converter = new Java2DFrameConverter()) {
+            grabber.setPixelFormat(org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_BGR24);
             grabber.start();
             long durationMicros = grabber.getLengthInTime();
             if (durationMicros <= 0) {
                 throw new IOException("Video duration is unavailable");
             }
 
+            var stream = grabber.getFormatContext().streams(grabber.getVideoStream());
+            long videoStartMicros = stream.start_time() == org.bytedeco.ffmpeg.global.avutil.AV_NOPTS_VALUE
+                    ? 0 : Math.round(stream.start_time() * 1_000_000.0
+                    * stream.time_base().num() / stream.time_base().den());
             long intervalMicros = (long) DEFAULT_INTERVAL_MS * 1000;
             int segmentCount = (int) (durationMicros / intervalMicros);
             if (segmentCount == 0) segmentCount = 1;
@@ -210,17 +217,33 @@ public class VideoFingerprintService {
                 if (timestamp >= durationMicros) {
                     timestamp = durationMicros - 1;
                 }
-                grabber.setTimestamp(timestamp);
-                Frame frame = grabber.grabImage();
-                BufferedImage image = frame == null ? null : converter.convert(frame);
-                if (image == null) {
-                    throw new IOException("Could not extract comparison frame at segment " + i);
+                // 프레임률 변환으로 장면 전환 경계가 한 프레임 이동하는 경우를 비교한다.
+                long tolerance = grabber.getFrameRate() > 0
+                        ? Math.min(50_000L, Math.round(500_000.0 / grabber.getFrameRate())) : 0;
+                List<Long> samples = new ArrayList<>();
+                // 한 번 탐색한 뒤 인접 프레임은 순차 디코딩한다.
+                grabber.setVideoTimestamp(Math.max(0, timestamp - tolerance));
+                for (int sample = 0; sample < 3; sample++) {
+                    Frame frame = grabber.grabImage();
+                    if (frame == null) {
+                        if (!samples.isEmpty()) break;
+                        throw new IOException("Could not extract comparison frame at segment " + i);
+                    }
+                    if (!samples.isEmpty() && frame.timestamp > videoStartMicros + timestamp + tolerance + 1) break;
+                    // JavaCV 1.5.11은 행 패딩을 색상 채널로 오인할 수 있다.
+                    frame.imageChannels = 3;
+                    BufferedImage image = converter.convert(frame);
+                    if (image == null) {
+                        throw new IOException("Could not extract comparison frame at segment " + i);
+                    }
+                    samples.add(computePHash(VideoFrameOrientation.toDisplay(image, grabber.getDisplayRotation())));
                 }
-                hashes.add(computePHash(image));
+                segments.add(String.join(":", samples.stream().distinct()
+                        .map(h -> String.format("%016x", h)).toList()));
             }
 
             return FORMAT_PREFIX + "|" + durationMicros + "|" + DEFAULT_INTERVAL_MS
-                    + "|" + hashesToString(hashes);
+                    + "|" + String.join(",", segments);
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
@@ -260,7 +283,7 @@ public class VideoFingerprintService {
         Graphics2D g = resized.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
                 RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        g.drawImage(image, 0, 0, size, size, null);
+        g.drawImage(image.getScaledInstance(size, size, Image.SCALE_AREA_AVERAGING), 0, 0, null);
         g.dispose();
 
         double[][] gray = new double[size][size];
@@ -279,8 +302,8 @@ public class VideoFingerprintService {
     private double[][] applyDCT(double[][] input) {
         int n = input.length;
         double[][] output = new double[n][n];
-        for (int u = 0; u < n; u++) {
-            for (int v = 0; v < n; v++) {
+        for (int u = 0; u < HASH_SIZE; u++) {
+            for (int v = 0; v < HASH_SIZE; v++) {
                 double sum = 0;
                 for (int i = 0; i < n; i++) {
                     for (int j = 0; j < n; j++) {
@@ -300,14 +323,15 @@ public class VideoFingerprintService {
     // ── 파싱·직렬화 ───────────────────────────────────────
 
     /** 세그먼트 지문 파싱 결과 */
-    record SegmentFingerprint(long durationMicros, long intervalMs, List<Long> hashes) {}
+    record SegmentFingerprint(long durationMicros, long intervalMs, List<Long> hashes,
+                              List<List<Long>> samples) {}
 
     /**
      * 세그먼트 지문 문자열을 파싱한다.
      * 형식이 맞지 않으면 null을 반환한다.
      */
     SegmentFingerprint parse(String value) {
-        if (value == null || !value.startsWith(FORMAT_PREFIX + "|")) {
+        if (value == null || (!value.startsWith(FORMAT_PREFIX + "|") && !value.startsWith("seg-v2|") && !value.startsWith("seg-v1|"))) {
             return null;
         }
         String[] parts = value.split("\\|", 4);
@@ -315,26 +339,29 @@ public class VideoFingerprintService {
         try {
             long durationMicros = Long.parseLong(parts[1]);
             long intervalMs = Long.parseLong(parts[2]);
-            List<Long> hashes = parseHashes(parts[3]);
-            return new SegmentFingerprint(durationMicros, intervalMs, hashes);
+            List<List<Long>> samples = new ArrayList<>();
+            if (!parts[3].isBlank()) {
+                for (String segment : parts[3].split(",")) {
+                    List<Long> hashes = new ArrayList<>();
+                    for (String hex : segment.split(":")) hashes.add(Long.parseUnsignedLong(hex.trim(), 16));
+                    if (hashes.isEmpty() || hashes.size() > 3) return null;
+                    samples.add(hashes);
+                }
+            }
+            return new SegmentFingerprint(durationMicros, intervalMs,
+                    samples.stream().map(hashes -> hashes.get(0)).toList(), samples);
         } catch (NumberFormatException e) {
             return null;
         }
     }
 
-    private List<Long> parseHashes(String csv) {
-        if (csv == null || csv.isBlank()) return List.of();
-        List<Long> hashes = new ArrayList<>();
-        for (String hex : csv.split(",")) {
-            hashes.add(Long.parseUnsignedLong(hex.trim(), 16));
+    private boolean matches(List<Long> query, List<Long> reference) {
+        for (long q : query) {
+            for (long r : reference) {
+                if (Long.bitCount(q ^ r) <= MATCH_THRESHOLD) return true;
+            }
         }
-        return hashes;
-    }
-
-    private String hashesToString(List<Long> hashes) {
-        return String.join(",", hashes.stream()
-                .map(h -> String.format("%016x", h))
-                .toList());
+        return false;
     }
 
     // ── 불일치 구간 계산 ──────────────────────────────────

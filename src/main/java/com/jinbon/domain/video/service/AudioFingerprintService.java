@@ -74,7 +74,7 @@ public class AudioFingerprintService {
     public String generate(MultipartFile file) throws IOException {
         File temp = File.createTempFile("jinbon-aud-", ".tmp");
         try {
-            file.transferTo(temp);
+            file.transferTo(temp.toPath());
             return extractAudioFingerprint(temp);
         } finally {
             Files.deleteIfExists(temp.toPath());
@@ -222,6 +222,19 @@ public class AudioFingerprintService {
             long durationMicros = grabber.getLengthInTime();
             if (durationMicros <= 0) {
                 return null;
+            }
+
+            // AAC/Opus 패딩과 프레임률 반올림으로 컨테이너만 정수 초를 넘겨도
+            // 존재하지 않는 추가 음성 구간을 만들지 않는다. 한 프레임 이내만 보정한다.
+            var stream = grabber.getFormatContext().streams(grabber.getAudioStream());
+            if (stream.duration() > 0 && grabber.getFrameRate() > 0) {
+                long audioDuration = Math.round(stream.duration() * 1_000_000.0
+                        * stream.time_base().num() / stream.time_base().den());
+                long paddingTolerance = (long) Math.ceil(1_000_000.0 / grabber.getFrameRate()) + 1_000;
+                if (audioDuration > 0 && durationMicros >= audioDuration
+                        && durationMicros - audioDuration <= paddingTolerance) {
+                    durationMicros = audioDuration;
+                }
             }
 
             int samplesPerSegment = SAMPLE_RATE * DEFAULT_INTERVAL_MS / 1000;

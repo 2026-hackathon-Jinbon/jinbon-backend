@@ -19,7 +19,8 @@ public class VideoContentMatchService {
 
     private static final double VIDEO_COVERAGE_HIGH = 0.95;
     private static final double VIDEO_COVERAGE_PARTIAL = 0.80;
-    private static final double AUDIO_COVERAGE_HIGH = 0.90;
+    // 음성은 비교한 모든 구간이 일치해야 한다. 구간 내부의 지문 허용 오차는 유지한다.
+    private static final double AUDIO_COVERAGE_HIGH = 1.0;
 
     private final VideoRepository videoRepository;
     private final PerceptualHashService perceptualHashService;

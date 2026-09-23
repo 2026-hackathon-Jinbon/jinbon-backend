@@ -10,6 +10,8 @@ import com.jinbon.domain.video.port.*;
 import com.jinbon.domain.video.repository.VideoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockMultipartFile;
 import java.util.*;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -82,6 +84,39 @@ class VideoVerifyServiceTest {
         assertThat(result.audioMatch()).isNotNull();
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {10, 20, 100})
+    void oneUnmatchedAudioSegmentIsNotAuthentic(int segmentCount) {
+        // 90%, 95%, 99% 일치여도 불일치 음성 구간이 하나 있으면 인증하지 않는다.
+        var audioComparison = new SegmentMatchResult(
+                (double) (segmentCount - 1) / segmentCount, true, 0,
+                0, segmentCount * 1000L, segmentCount - 1, segmentCount, segmentCount,
+                List.of(new GapRange(5000, 6000)));
+        doReturn(audioComparison).when(audioFp).compare(audioFpStr, audioFpStr);
+
+        var result = service.verify(file);
+
+        assertThat(result.segmentMatch().coverage()).isEqualTo(1.0);
+        assertThat(result.audioMatch().unmatchedRanges()).hasSize(1);
+        assertThat(result.notice()).contains("음성 비교 기준을 충족하지 못해 진본으로 인증하지 않습니다.");
+        assertThat(result.audioMatch().bestOffsetMs()).isEqualTo(result.segmentMatch().bestOffsetMs());
+        assertThat(result.authentic()).isFalse();
+        assertThat(result.verdict()).isEqualTo(VerificationVerdict.CONTENT_SIMILAR);
+        assertThat(result.displayStatus()).isEqualTo(DisplayStatus.CONTENT_SIMILAR);
+    }
+
+    @Test void minorAudioFingerprintDifferencesWithinEverySegmentAreStillAuthentic() throws Exception {
+        // 각 구간의 해밍 거리가 4인 경우: 구간 내부의 기존 허용 오차는 유지한다.
+        doReturn("aud-v1|2000000|1000|000000000000000f,fffffffffffffff0")
+                .when(audioFp).generate(file);
+
+        var result = service.verify(file);
+
+        assertThat(result.audioMatch().coverage()).isEqualTo(1.0);
+        assertThat(result.audioMatch().unmatchedRanges()).isEmpty();
+        assertThat(result.authentic()).isTrue();
+    }
+
     @Test void matchingOriginalSegmentWithAudioIsAuthentic() throws Exception {
         doReturn("v2|1000000|0000000000000000").when(phash).generateFingerprint(file);
         doReturn("seg-v1|1000000|1000|0000000000000000").when(segFp).generate(file);
@@ -102,6 +137,7 @@ class VideoVerifyServiceTest {
         assertThat(result.verdict()).isEqualTo(VerificationVerdict.CONTENT_SIMILAR);
         assertThat(result.authentic()).isFalse();
         assertThat(result.displayStatus()).isEqualTo(DisplayStatus.CONTENT_SIMILAR);
+        assertThat(result.notice()).contains("음성 비교 정보가 부족해").doesNotContain("음성 비교 기준을 충족하지 못해");
     }
 
     @Test void matchingVideoAndAudioFromDifferentSourceTimesIsNotAuthentic() throws Exception {
@@ -117,6 +153,7 @@ class VideoVerifyServiceTest {
         assertThat(result.audioMatch().bestOffsetMs()).isEqualTo(1000);
         assertThat(result.authentic()).isFalse();
         assertThat(result.verdict()).isEqualTo(VerificationVerdict.CONTENT_SIMILAR);
+        assertThat(result.notice()).contains("영상과 음성의 원본 대응 시점이 달라").doesNotContain("보류");
     }
 
     @Test void matchingVideoAndAudioAtSameNonzeroSourceTimeIsAuthentic() throws Exception {
@@ -138,6 +175,9 @@ class VideoVerifyServiceTest {
         var result = service.verify(file);
         assertThat(result.verdict()).isEqualTo(VerificationVerdict.CONTENT_SIMILAR);
         assertThat(result.authentic()).isFalse();
+        assertThat(result.notice()).contains("영상 구간 일치율 100.0% (2/2)", "음성 구간 일치율 0.0% (0/2)",
+                "음성 비교 기준을 충족하지 못해 진본으로 인증하지 않습니다.")
+                .doesNotContain("보류", "원본 대응 시점이 달라");
     }
 
     @Test void perceptualMatchStillRequiresValidCredential() {

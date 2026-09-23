@@ -1,6 +1,8 @@
 package com.jinbon.domain.kakao.controller;
 
+import com.jinbon.domain.kakao.service.KakaoCallbackService;
 import com.jinbon.domain.video.dto.VideoVerifyResponse;
+import com.jinbon.domain.video.dto.SegmentMatchResult;
 import com.jinbon.domain.video.dto.VerificationVerdict;
 import com.jinbon.domain.video.service.VideoVerifyService;
 import lombok.RequiredArgsConstructor;
@@ -10,8 +12,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -24,6 +29,7 @@ public class KakaoSkillController {
     private static final Pattern URL_PATTERN = Pattern.compile("https?://\\S+");
 
     private final VideoVerifyService videoVerifyService;
+    private final KakaoCallbackService callbackService;
 
     @PostMapping("/verify")
     public Map<String, Object> verify(@RequestBody Map<String, Object> payload) {
@@ -34,6 +40,23 @@ public class KakaoSkillController {
             return simpleText("🎥 확인하고 싶은 영상 링크를 보내주세요.\n\n유튜브, 쇼츠 링크 모두 괜찮아요.\n예: https://www.youtube.com/watch?v=...");
         }
 
+        Object userRequest = payload.get("userRequest");
+        Object callbackUrl = userRequest instanceof Map<?, ?> request ? request.get("callbackUrl") : null;
+        if (callbackUrl instanceof String callback && !callback.isBlank()) {
+            try {
+                callbackService.submit(callback, () -> verifyVideo(url));
+                log.info("Kakao skill accepted for callback verification");
+                return Map.of("version", "2.0", "useCallback", true);
+            } catch (IllegalArgumentException | RejectedExecutionException e) {
+                log.warn("Kakao callback request rejected - errorType={}", e.getClass().getSimpleName());
+                return simpleText("검증 요청을 접수하지 못했어요. 잠시 후 다시 시도해주세요.");
+            }
+        }
+
+        return verifyVideo(url);
+    }
+
+    private Map<String, Object> verifyVideo(String url) {
         try {
             VideoVerifyResponse result = videoVerifyService.verifyByUrl(url);
             return simpleText(formatResult(result));
@@ -64,55 +87,49 @@ public class KakaoSkillController {
 
     private String formatResult(VideoVerifyResponse result) {
         VerificationVerdict verdict = result.verdict();
+        boolean comparisonFailed = verdict == VerificationVerdict.CONTENT_SIMILAR
+                || verdict == VerificationVerdict.PARTIAL_MATCH;
+        boolean comparisonAvailable = hasComparison(result.segmentMatch()) && hasComparison(result.audioMatch());
+        boolean audioMismatch = comparisonFailed && comparisonAvailable && !result.audioMatch().unmatchedRanges().isEmpty();
+        boolean videoMismatch = comparisonFailed && comparisonAvailable && !result.segmentMatch().unmatchedRanges().isEmpty();
 
-        if (verdict == VerificationVerdict.NOT_REGISTERED) {
-            return "🔎 진본 기록을 찾지 못했어요.\n\n"
-                    + "이 영상이 가짜라는 뜻은 아니에요.\n"
-                    + "다만 현재 Jinbon에 등록된 원본 기록과는 매칭되지 않았어요.\n\n"
-                    + "원본 등록 여부를 한 번 확인해주세요.";
-        }
-
-        if (verdict == VerificationVerdict.REGISTERED_BUT_REVOKED) {
-            return "⚠️ 등록 기록은 있지만 현재 비활성화된 영상이에요.\n\n"
-                    + "관리자 확인이 필요한 상태입니다.";
-        }
-
-        if (verdict == VerificationVerdict.VERIFICATION_UNAVAILABLE) {
-            return "⏳ 등록 기록은 확인했지만, 지금은 외부 검증을 완료하지 못했어요.\n\n"
-                    + "잠시 후 다시 시도해주세요.";
-        }
-
+        String title;
         if (result.authentic()) {
-            String message = switch (verdict) {
-                case EXACT_MATCH -> "등록된 원본 영상과 정확히 일치해요.";
-                case SAME_CONTENT, SIMILAR_MATCH -> "등록 원본과 영상·음성 유사도 기준을 통과했어요.";
-                default -> result.message();
-            };
-
-            StringBuilder builder = new StringBuilder();
-            builder.append("✅ 진본 확인 완료\n\n");
-            builder.append(message);
-            builder.append("\n확인 방식: ").append(verdict == VerificationVerdict.EXACT_MATCH
-                    ? "원본 파일 정확 일치" : "영상·음성 비교");
-
-            if (result.registrantName() != null) {
-                builder.append("\n\n등록자 표시명: ").append(result.registrantName());
-                builder.append("\n표시명은 기관 소속·직함의 인증을 뜻하지 않습니다.");
-            }
-            if (result.registeredAt() != null) {
-                builder.append("\n등록 시각: ").append(result.registeredAt().toLocalDate())
-                        .append(" ").append(result.registeredAt().toLocalTime().withNano(0));
-            }
-            if (result.videoId() != null) {
-                builder.append("\n등록 영상 ID: ").append(result.videoId());
-            }
-            if (result.notice() != null) builder.append("\n\n").append(result.notice());
-
-            return builder.toString();
+            title = "✅ 진본 확인";
+        } else if (audioMismatch || videoMismatch) {
+            title = "⚠️ 원본 불일치";
+        } else if (verdict == VerificationVerdict.NOT_REGISTERED) {
+            title = "🔎 등록 기록 없음";
+        } else {
+            title = "⚠️ 확인 불가";
         }
+        String message = audioMismatch && videoMismatch ? "등록 원본과의 영상·음성 비교에서 불일치가 확인되었습니다."
+                : audioMismatch ? "등록 영상과의 음성 비교에서 불일치가 확인되었습니다."
+                : videoMismatch ? "등록 원본과의 영상 비교에서 불일치가 확인되었습니다."
+                : result.message();
 
-        return "🤔 진본 여부를 확정하지 못했어요.\n\n"
-                + "영상 링크를 다시 확인하거나, 원본 등록 여부를 확인해주세요.";
+        List<String> details = new ArrayList<>();
+        if (verdict == VerificationVerdict.EXACT_MATCH) {
+            details.add("확인 방식: 원본 파일 정확 일치");
+        } else if (verdict == VerificationVerdict.SAME_CONTENT || verdict == VerificationVerdict.SIMILAR_MATCH) {
+            details.add("확인 방식: 영상·음성 비교");
+        }
+        if (result.registrantName() != null && !result.registrantName().isBlank()) {
+            details.add("등록자 표시명: " + result.registrantName());
+        }
+        if (result.videoId() != null) {
+            details.add("등록 증거: " + (result.blockchainVerified() && result.vcVerified() && result.vcClaimsBound()
+                    ? "블록체인·보증서 확인됨" : "검증 미완료"));
+        }
+        if (result.registeredAt() != null) {
+            details.add("등록 시각: " + result.registeredAt().format(DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm")));
+        }
+        return title + "\n\n" + message + (details.isEmpty() ? ""
+                : "\n\n" + (result.authentic() ? "" : "비교 원본\n") + String.join("\n", details));
+    }
+
+    private boolean hasComparison(SegmentMatchResult comparison) {
+        return comparison != null && comparison.totalQuerySegments() > 0 && comparison.totalRefSegments() > 0;
     }
 
     private Map<String, Object> simpleText(String text) {

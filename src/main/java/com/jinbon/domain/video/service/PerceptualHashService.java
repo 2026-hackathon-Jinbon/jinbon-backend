@@ -42,12 +42,13 @@ public class PerceptualHashService {
      * 영상 파일에서 지각해시 핑거프린트를 생성한다.
      * 16개 상대 시점의 프레임을 추출하고 각 프레임의 pHash를 계산한다.
      *
-     * @return v2|영상 길이(마이크로초)|프레임별 pHash 목록
+     * @return v4|영상 길이(마이크로초)|표시 방향 기준 프레임별 pHash 목록
      */
     public String generateFingerprint(MultipartFile file) throws IOException {
         File tempFile = File.createTempFile("jinbon-phash-", ".tmp");
         try {
-            file.transferTo(tempFile);
+            // File 오버로드는 업로드 원본을 이동하므로, 후속 추출을 위해 복사한다.
+            file.transferTo(tempFile.toPath());
             return extractFingerprint(tempFile);
         } finally {
             Files.deleteIfExists(tempFile.toPath());
@@ -106,7 +107,7 @@ public class PerceptualHashService {
     private record Fingerprint(long durationMicros, List<Long> hashes) {}
 
     private Fingerprint parse(String value) {
-        if (value != null && value.startsWith("v2|")) {
+        if (value != null && (value.startsWith("v2|") || value.startsWith("v3|") || value.startsWith("v4|"))) {
             String[] parts = value.split("\\|", 3);
             return new Fingerprint(Long.parseLong(parts[1]), stringToFrameHashes(parts[2]));
         }
@@ -119,18 +120,21 @@ public class PerceptualHashService {
         List<Long> hashes = new ArrayList<>();
         try (FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(videoFile);
              Java2DFrameConverter converter = new Java2DFrameConverter()) {
+            grabber.setPixelFormat(org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_BGR24);
             grabber.start();
             long durationMicros = grabber.getLengthInTime();
             if (durationMicros <= 0) throw new IOException("Video duration is unavailable");
             for (int i = 0; i < MAX_FRAMES; i++) {
-                grabber.setTimestamp((long) ((i + 0.5) * durationMicros / MAX_FRAMES));
+                grabber.setVideoTimestamp((long) ((i + 0.5) * durationMicros / MAX_FRAMES));
                 Frame frame = grabber.grabImage();
+                // JavaCV 1.5.11의 행 패딩을 색상 채널 수로 잘못 읽지 않도록 고정한다.
+                if (frame != null) frame.imageChannels = 3;
                 BufferedImage image = frame == null ? null : converter.convert(frame);
                 // 추출 실패를 건너뛰면 상대 시점이 어긋나므로 검증을 중단한다.
                 if (image == null) throw new IOException("Could not extract comparison frame");
-                hashes.add(computePHash(image));
+                hashes.add(computePHash(VideoFrameOrientation.toDisplay(image, grabber.getDisplayRotation())));
             }
-            return "v2|" + durationMicros + "|" + framHashesToString(hashes);
+            return "v4|" + durationMicros + "|" + framHashesToString(hashes);
         } catch (Exception e) {
             throw new IOException("Failed to extract frames from video", e);
         }
@@ -182,7 +186,7 @@ public class PerceptualHashService {
         BufferedImage resized = new BufferedImage(size, size, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = resized.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        g.drawImage(image, 0, 0, size, size, null);
+        g.drawImage(image.getScaledInstance(size, size, Image.SCALE_AREA_AVERAGING), 0, 0, null);
         g.dispose();
 
         double[][] gray = new double[size][size];
@@ -205,8 +209,8 @@ public class PerceptualHashService {
         int n = input.length;
         double[][] output = new double[n][n];
 
-        for (int u = 0; u < n; u++) {
-            for (int v = 0; v < n; v++) {
+        for (int u = 0; u < HASH_SIZE; u++) {
+            for (int v = 0; v < HASH_SIZE; v++) {
                 double sum = 0;
                 for (int i = 0; i < n; i++) {
                     for (int j = 0; j < n; j++) {
