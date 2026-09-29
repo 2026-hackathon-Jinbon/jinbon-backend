@@ -1,318 +1,151 @@
 # 진본 (JinBon) Backend
 
-블록체인 기반 영상 진본 인증 서비스 백엔드
+**이 영상이 등록된 원본과 같은지, 누가 등록했는지 확인합니다.**
 
-> 2026 블록체인 & AI 해커톤 - Track 2 (MVP 개발)
+모바일 신분증으로 본인확인한 등록자의 영상을 기록하고, 파일이나 링크로 받은 영상을 원본과 비교합니다. 블록체인 기록과 VC(검증 가능한 자격증명)로 등록 증거를 확인합니다.
 
-## 서비스 개요
+[동작 방식](#동작-방식) · [시작하기](#시작하기) · [API 사용](#api-사용) · [검증 결과](#검증-결과)
 
-**진본**은 영상 콘텐츠의 원본 여부를 블록체인과 DID 기술로 증명하는 플랫폼입니다.
-공인 등록자(모바일 신분증으로 본인확인을 완료한 진본 등록자)가 영상을 등록하면 해시와 블록체인으로 영상 무결성을 기록하고, 사용자가 Wallet에서 VC(Verifiable Credential)를 발급받아 등록 사실을 증명할 수 있습니다. 기관 소속·공식 발행 권한 인증은 별도입니다.
+## 동작 방식
 
-## 핵심 프로세스
-
-### 시스템 구성도
-
-![시스템 구성도](docs/system_diagram.png)
-
-### 영상 등록 플로우
-
-```
-공인(Issuer) → 진본 백엔드
-  │
-  ├─ 1. 모바일 신분증 로그인 (OmniOne CX)
-  ├─ 2. 영상 업로드
-  ├─ 3. SHA-256 (fineHash) 생성 → 중복 영상 확인
-  ├─ 4. 지각해시 (DCT 기반 pHash, 프레임별 — 재인코딩 내성) 생성
-  ├─ 5. 두 해시의 결합 SHA-256 생성 (Merkle Root 필드) + 서버 HMAC 서명
-  │
-  ├─ 6. [선택과제 2] OmniOne Chain 기록
-  │     → Merkle Root + Issuer DID + Signature → 블록체인 트랜잭션
-  │
-  ├─ 7. DB 저장 (영상정보, 해시, Merkle Path, txHash)
-  │
-  └─ 8. [선택과제 1] Open DID VC 보증서 발급 준비
-        → 서버가 온체인 등록을 재확인
-        → Holder DID와 Merkle Root, 체인·컨트랙트·트랜잭션 증거를 Issuer에 등록
-        → 진본 Issuer가 "블록체인 등록 사실"을 보증하는 발급 Offer 생성
-        → 앱이 Wallet 프로토콜로 사용자 동의·PIN 인증 후 VC 수령 및 저장
-        → 발급 완료 API로 vcId 제출
-        → 서버가 VC 상태·issuer/subject DID·영상 블록체인 claim을 검증한 뒤 연결
+```mermaid
+flowchart TB
+    subgraph registration["영상 등록"]
+        direction LR
+        A["본인확인 · DID 연결"] --> B["영상 등록"]
+        B --> C["블록체인 기록 · VC 발급"]
+    end
+    subgraph verification["영상 검증"]
+        direction LR
+        D["파일 업로드 · 영상 링크"] --> E["원본 비교 · 등록 증거 확인"]
+        E --> F["검증 결과"]
+    end
+    registration --> verification
+    classDef accent fill:#e7f4ef,stroke:#23856d,color:#174c3f
+    class B,E accent
+    style registration fill:#f8fafc,stroke:#cbd5e1,color:#334155
+    style verification fill:#f8fafc,stroke:#cbd5e1,color:#334155
 ```
 
-영상 등록과 VC 발급은 별도 단계입니다. 영상의 블록체인 등록이 완료되면 VC 발급을 취소하거나 일시적으로 실패해도 영상 등록 결과는 유지되며, 이후 Wallet에서 다시 발급받을 수 있습니다.
+- **등록:** 본인확인과 Wallet DID(분산식별자) 연결 후 영상을 등록하고, Wallet에서 VC 보증서를 발급받습니다.
+- **비교:** 파일 해시로 정확한 일치를 확인합니다. 재압축된 영상은 영상·음성 구간을 함께 비교합니다.
+- **확인:** 원본 비교와 블록체인·VC 검증을 모두 통과해야 진본으로 판정합니다. 웹·앱·브라우저 확장과 카카오톡에서 검증 API를 사용할 수 있습니다.
 
-### 회원가입 / 로그인 플로우
+영상 등록과 VC 발급은 별도 단계입니다. 보증서 발급을 취소하거나 실패해도 영상 등록은 유지되며, 나중에 다시 발급받을 수 있습니다.
 
-회원가입과 로그인은 명확히 분리됩니다. 로그인 과정에서는 회원을 자동 생성하지 않습니다.
+진본은 등록 원본과의 비교 및 등록 사실을 확인합니다. 영상 내용의 사실 여부, 저작권, 등록자의 기관 소속·공식 발행 권한을 보증하지 않습니다.
 
-```
-회원가입: 모바일 신분증 인증 → PENDING 회원 생성 → Wallet/DID 생성
-        → DID Document 등록 → 서버 DID 연결 → ACTIVE 전환 → JWT 발급
+## 시작하기
 
-로그인:   모바일 신분증 인증 → CI로 ACTIVE 회원 조회 → JWT 발급
-        (미가입: 거부 / PENDING: 가입 완료 안내)
-```
+### 준비 사항
 
-CI 원문은 저장하지 않습니다. 인증 직후 서버 전용 비밀키로 `HMAC-SHA256` 처리한 식별자만 회원 중복 확인·로그인·DID 복구에 사용하며, VC·DID Document·블록체인에는 포함하지 않습니다. `CI_HMAC_SECRET`은 32자 이상의 고정값으로 별도 보관하고 변경 또는 분실하지 않아야 합니다.
+- **JDK 21**, **Docker 및 Docker Compose**
+- URL·카카오톡 검증 사용 시 **yt-dlp와 FFmpeg** — `yt-dlp`, `ffmpeg`, `ffprobe`를 서버의 `PATH`에 설치합니다. YouTube용 추가 의존성은 [yt-dlp 안내](https://github.com/yt-dlp/yt-dlp#dependencies)를 따릅니다.
+- 본인확인·영상 등록·VC 발급을 위한 외부 서비스 접속 정보
 
-### 영상 검증 플로우
+### 1. 환경변수 설정
 
-```
-검증 요청자 (크롬 확장 등) → 진본 백엔드
-  │
-  ├─ 1. SHA-256 해시 재계산 → 캐시/DB 정확 매칭 시도
-  │     ├─ 캐시 HIT → 즉시 반환 (DB/블록체인 조회 생략)
-  │     ├─ DB HIT → 블록체인 검증 후 결과 캐싱
-  │     └─ MISS ↓
-  ├─ 2. 지각해시(pHash) 생성 → 유사도 검색 (재인코딩 영상 대응)
-  │     → 영상 길이 + 같은 상대 시점의 16개 프레임 비교 → 콘텐츠 유사/부분 유사 판정
-  │
-  ├─ 3. [선택과제 2] OmniOne Chain 검증
-  │     → Merkle Root로 온체인 Issuer DID + Signature 조회
-  │     → 서명 재계산 결과와 온체인 데이터 비교 → 무결성 확인
-  │
-  ├─ 4. [선택과제 1] Open DID VC 검증
-  │     → VC 상태(ACTIVE), issuer/subject DID, 영상 commitment·트랜잭션 claim 일치 확인
-  │
-  └─ 5. 원본 일치와 등록 증거 구분 + 검증 결과 캐싱 (미등록·유사 후보·장애 제외)
-```
-
-## 해커톤 과제별 활용
-
-### 필수과제: 모바일 신분증 (OmniOne CX)
-
-| 항목 | 내용 |
-|------|------|
-| 용도 | 공인(Issuer) 로그인 및 본인확인 |
-| 연동 방식 | OmniOne CX OACX API (trans / authen/app) |
-| 인증 흐름 | WebToApp (token 발급 → 딥링크 생성 → 앱 호출) → OmniOne CX 신원 검증 → CI 기반 회원 처리 → JWT 발급 |
-
-### 선택과제 1: Open DID
-
-| 항목 | 내용 |
-|------|------|
-| 용도 | 영상 블록체인 등록 보증서(VC) 발급 및 검증 |
-| 역할 | **진본 Issuer가 "누가, 언제, 어떤 온체인 기록으로 이 영상을 등록했는가"를 확인했다는 증명** |
-| 구성 | Open DID Orchestrator로 TAS, Issuer, Verifier, CA, Wallet, API 서버 일괄 관리 |
-| 블록체인 | Hyperledger Besu (로컬 Docker) — DID Document 앵커링용 |
-| VC 발급 흐름 | 백엔드가 Holder/Claim 등록 및 발급 Offer 생성 → 앱 Wallet이 offerId로 사용자 동의·PIN 인증 → issue-vc → confirm → 로컬 저장 → 백엔드에 vcId 제출 및 claim 결속 검증 |
-| 검증 시 | VC 상태(ACTIVE), 발급 기관·등록자 DID, 영상 commitment·온체인 claim 결속 확인 |
-
-### 선택과제 2: OmniOne Chain
-
-| 항목 | 내용 |
-|------|------|
-| 용도 | 영상 해시의 블록체인 기록 및 검증 |
-| 역할 | **"이 영상이 변조되지 않았는가"** 에 대한 무결성 증명 |
-| 체인 | OmniOne Chain (BESU 기반) |
-| 연동 방식 | REST API (`test.stage-chainapi.omnione.net`) + API Token 인증 |
-| 기록 데이터 | Merkle Root, Issuer DID, Digital Signature |
-| 스마트 컨트랙트 | Solidity 기반 JinBon.sol (register / getRecord / deactivate), 배포 지갑만 변경 가능 |
-| 검증 시 | 해시 재계산 → 온체인 Merkle Root 비교 → 무결성 판정 |
-
-### 두 과제의 조합
-
-![시스템 구성도](docs/PPT/jinbon_selection_task.png.png)
-
-## 기술 스택
-
-| 구분 | 기술 |
-|------|------|
-| Language | Java 21 |
-| Framework | Spring Boot 4.1.0 |
-| Database | PostgreSQL 16.4 |
-| Cache | Redis 7 |
-| Blockchain | OmniOne Chain (BESU / Solidity) |
-| DID | Open DID (Orchestrator + Hyperledger Besu) |
-| 모바일 신분증 | OmniOne CX (VC-Verifier) |
-| Build | Gradle 8.14 |
-
-## 프로젝트 구조
-
-```
-src/main/java/com/jinbon/
-├── JinbonApplication.java
-├── domain/
-│   ├── auth/              # 인증 (OmniOne CX + JWT)
-│   │   ├── controller/
-│   │   ├── dto/
-│   │   ├── port/          # 외부 인증·토큰 저장소 경계
-│   │   └── service/
-│   ├── member/            # 회원 관리
-│   │   ├── entity/
-│   │   └── repository/
-│   └── video/             # 영상 등록/검증
-│       ├── controller/
-│       ├── dto/
-│       ├── entity/
-│       ├── port/          # VC·블록체인·캐시 외부 연동 경계
-│       ├── repository/
-│       └── service/
-├── global/                # 공통
-│   ├── common/            #   응답 포맷
-│   ├── config/            #   Security, JWT Filter, 외부 연동 설정
-│   └── error/             #   예외 처리
-└── infra/                 # 외부 연동
-    ├── omnione/           #   OmniOne CX 클라이언트
-    ├── opendid/           #   Open DID Issuer 연동 + Wallet VC 발급 준비/검증
-    ├── blockchain/        #   OmniOne Chain 클라이언트
-    └── redis/              #   Redis 설정·토큰 저장소·검증 캐시
-```
-
-## 인프라 구성
-
-```
-docker-compose.yml (진본 인프라)
-├── jinbon-postgres (5432)    # 진본 백엔드 DB
-└── jinbon-redis (6380)       # 검증 캐시
-
-Open DID Orchestrator (localhost:9001)
-├── Hyperledger Besu (Docker)  # DID Document 앵커링용 블록체인
-├── PostgreSQL (5430)          # Open DID 서버 DB
-├── TAS (8090)                 # Trust Agent Server
-├── Issuer (8091)              # VC 발급 서버
-├── Verifier (8092)            # VC 검증 서버
-├── CA (8094)                  # Certificate Authority
-├── Wallet (8095)              # 지갑 서버
-├── API Gateway (8093)         # API 게이트웨이
-└── Demo (8099)                # 데모 서버
-```
-
-## 실행 방법
-
-### 사전 요구사항
-
-- JDK 21
-- Docker 및 Docker Compose
-- URL 영상 검증을 사용할 경우 `yt-dlp`
-- 별도로 설치한 Open DID Orchestrator 2.0.0
-- 배포된 `JinBon.sol` 컨트랙트와 배포 지갑 keystore
-
-### 1. 진본 인프라 기동
+저장소 루트에서 실행합니다. 기존 `.env`가 있으면 유지합니다.
 
 ```bash
-# PostgreSQL + Redis
+cp -n .env.example .env
+```
+
+[.env.example](.env.example)을 기준으로 `.env`를 채웁니다. 실행 시 자동으로 읽습니다.
+
+| 설정 | 입력 내용 |
+| --- | --- |
+| `DB_PASSWORD` | 로컬 PostgreSQL 비밀번호. 나머지 DB 설정은 예제의 기본값 사용 가능 |
+| `JWT_SECRET` | JWT·영상 등록 서명용 비밀키. 32바이트 이상의 임의 문자열 |
+| `CI_HMAC_SECRET` | 본인확인 식별자(CI) 보호용 비밀키. `JWT_SECRET`과 다른 32자 이상의 임의 문자열 |
+| `OPENDID_ENABLED` | VC 기능 사용 시 `true`. 예제의 기본값은 `false` |
+
+두 비밀키는 기존 회원 식별과 영상 검증에 사용되므로 유지·보관해야 합니다. CI 원문은 저장하지 않으며, `.env`와 keystore는 Git에 포함하지 않습니다.
+
+### 2. 인프라와 외부 서비스 준비
+
+```bash
 docker compose up -d
 ```
 
-### 2. Open DID Orchestrator 기동 (별도 저장소)
+PostgreSQL(`5432`)과 Redis(`6380`)이 실행됩니다. 아래 외부 서비스는 별도로 준비합니다.
+
+| 서비스 | 역할 | 설정 |
+| --- | --- | --- |
+| OmniOne CX | 모바일 신분증 본인확인 | `OMNIONE_CX_URL`에 API 서버 주소 지정 |
+| OmniOne Chain | 영상 등록 기록 저장·조회 | `BLOCKCHAIN_RPC_URL`, `BLOCKCHAIN_API_TOKEN`, `BLOCKCHAIN_NETWORK`, `BLOCKCHAIN_CHAIN_ID`, `CONTRACT_ADDRESS` 설정 |
+| Open DID 2.0.0 | Wallet DID·VC 발급·검증 | TAS·Issuer·Wallet 준비, `OPENDID_ENABLED=true`, `OPENDID_VC_CLAIM_NAMESPACE` 설정 |
+
+**블록체인 지갑:** [JinBon.sol](contracts/JinBon.sol)을 배포하고, 배포 지갑의 `WALLET_ADDRESS`와 `KEYSTORE_PASSWORD`를 설정합니다. 같은 지갑의 keystore를 `src/main/resources/keystore/omnione-chain-keystore.json`에 둡니다. 등록·비활성화는 배포 지갑만 실행할 수 있습니다.
+
+**VC 발급 설정:** [Open DID Orchestrator](https://github.com/OmniOneID/did-orchestrator-server)에서 서버를 준비하고, Issuer에 진본용 VC 스키마·발급 정책을 등록합니다. [application.yml](src/main/resources/application.yml)의 TAS(`8090`)·Issuer(`8091`) 주소, 발급 정책(`vcplan-jinbon-01`), claim namespace(`ns-jinbon-video-01`)를 실제 설정과 맞춥니다. `.env.example`의 namespace는 비어 있으므로 값을 채워야 합니다.
+
+`OPENDID_ENABLED=false`는 VC 기능만 끕니다. 영상 등록에는 블록체인 연결이 필요하며, VC 검증 없이는 진본 판정을 반환하지 않습니다.
+
+### 3. 백엔드 실행
 
 ```bash
-cd /path/to/did-orchestrator-server
-
-# 서버 JAR 다운로드 (최초 1회)
-sh download.sh 2.0.0
-
-# 빌드
-./gradlew clean build -x test
-
-# 실행
-java -jar did-orchestrator-server-2.0.0.jar
-```
-
-브라우저에서 `http://localhost:9001` 접속 후:
-1. Repository 선택 (Hyperledger Besu)
-2. **Generate All** → Wallet/DID Document 생성
-3. **Start All** → 전체 서버 기동
-
-Open DID를 사용하지 않을 때는 `.env`에서 `OPENDID_ENABLED=false`로 설정합니다.
-이 경우 영상 등록은 가능하지만 VC 준비·완료·검증은 수행되지 않으며 `vcVerified`는 `false`입니다.
-
-### 3. 진본 백엔드 실행
-
-```bash
-# 환경변수 설정
-cp .env.example .env
-
-# contracts/JinBon.sol을 배포한 뒤 CONTRACT_ADDRESS를 설정하고,
-# 배포에 사용한 지갑 keystore를 아래 경로에 둡니다.
-# src/main/resources/keystore/omnione-chain-keystore.json
-
-# 빌드 & 실행
 ./gradlew bootRun
 ```
 
-## API 엔드포인트
+기본 주소는 `http://localhost:8070`입니다. `SERVER_PORT`로 변경할 수 있습니다.
 
-| Method | Path | 설명 | 인증 |
-|--------|------|------|------|
-| POST | `/api/auth/token` | OmniOne CX 토큰 생성 | X |
-| POST | `/api/auth/app/request` | WebToApp 인증 요청 (Deep Link 생성) | X |
-| POST | `/api/auth/app/verify` | WebToApp 검증 + 로그인 | X |
-| POST | `/api/auth/did/rebind` | 앱 재설치 후 Wallet DID 재연결 | X (재연결 토큰) |
-| POST | `/api/auth/refresh` | JWT 토큰 갱신 | X |
-| POST | `/api/auth/logout` | 로그아웃 (Refresh Token 폐기) | X |
-| POST | `/api/signup/token` | 회원가입용 OmniOne CX 토큰 생성 | X |
-| POST | `/api/signup/app/request` | 회원가입용 WebToApp 인증 요청 | X |
-| POST | `/api/signup/app/verify` | 본인확인 + PENDING 회원 생성 | X |
-| POST | `/api/signup/did/complete` | DID 연결 + 회원가입 완료 + JWT 발급 | X (가입 토큰) |
-| POST | `/api/videos` | 영상 등록 (해시 + 블록체인) 및 Wallet VC 발급 준비 | O (ISSUER) |
-| POST | `/api/videos/{id}/vc/complete` | Wallet VC 발급 완료 후 `vcId`와 등록 응답의 `offerId` 연결 | O (ISSUER, 본인 영상) |
-| GET | `/api/videos` | 내 영상 목록 조회 | O |
-| GET | `/api/videos/{id}` | 영상 상세 조회 | O |
-| PATCH | `/api/videos/{id}/deactivate` | 영상 비활성화 | O (ISSUER) |
-| POST | `/api/verify` | 영상 진본 검증 (파일 업로드) | X |
-| POST | `/api/verify/url` | 영상 진본 검증 (URL 기반, 서버 다운로드 후 전체 분석) | X |
+- [Swagger UI](http://localhost:8070/swagger-ui/index.html) — API 요청·응답 문서. 기본·`dev` 프로파일에서 인증 없이 접근
+- [모바일 신분증 인증 화면](http://localhost:8070/auth.html)
 
-### 영상 검증 판정
+## API 사용
 
-검증 API의 `authentic=true`는 파일 정확 일치 또는 영상·음성 유사도 기준 통과에 더해 블록체인·VC 검증을 모두 통과한 경우 반환합니다.
-유사도 경로는 영상 커버리지 95% 이상, 음성 커버리지 100% 일치 및 순서 보존과 동일한 원본 대응 시간 오프셋을 요구합니다. 이 수치는 탐지 정확도가 아닙니다. 반복 장면 등으로 최적 오프셋이 다르면 보수적으로 확인을 보류합니다.
-앱·웹·확장은 `진본 확인 완료` 표시를 유지하고 확인 방식을 `원본 파일 정확 일치` 또는 `영상·음성 비교`로 구분합니다. 유사 후보만 있는 `CONTENT_SIMILAR`·`PARTIAL_MATCH`는 진본 확인 보류입니다.
-등록 증거는 `blockchainVerified`, `vcVerified`, `vcClaimsBound`로 별도 표시합니다.
+영상 등록·관리는 `Authorization: Bearer <accessToken>`이 필요합니다. **회원가입 완료 후 로그인은 별도로 진행**합니다. 영상 검증 API는 로그인 없이 사용할 수 있습니다.
 
-| verdict | 의미 |
-|---------|------|
-| `EXACT_MATCH` | 등록된 원본 파일과 SHA-256이 정확히 일치 |
-| `SIMILAR_MATCH` | 영상·음성 유사도와 동일한 원본 대응 시간 오프셋 기준 통과 (`AUTHENTICATED`, 등록 증거 유효 시) |
-| `CONTENT_SIMILAR` | 후보는 찾았지만 비교 기준 미달, 시간 오프셋 불일치 또는 정보 부족 |
-| `PARTIAL_MATCH` | 일부 프레임 유사, 길이·순서·구간 차이 또는 비교 정보 부족 (`PARTIAL_SIMILAR`) |
-| `CERTIFICATE_MISSING` | 보증서 미발급 |
-| `CERTIFICATE_INVALID` | 보증서 검증 실패 |
-| `REGISTERED_BUT_REVOKED` | 등록 기록은 있으나 이후 비활성화됨 |
-| `NOT_REGISTERED` | 일치하거나 유사한 등록 기록을 찾지 못함 |
-| `VERIFICATION_UNAVAILABLE` | 블록체인 또는 VC 외부 검증 장애, 혹은 등록 무결성을 확인할 수 없는 상태 |
+| 메서드 | 경로 | 용도 |
+| --- | --- | --- |
+| `POST` | `/api/videos` | 영상 등록 (`file`, `title`), ISSUER 권한 필요 |
+| `GET` | `/api/videos` | 내 영상 목록 조회 |
+| `POST` | `/api/videos/{videoId}/vc/prepare` | 등록 영상의 VC 발급 준비·재시도 |
+| `POST` | `/api/videos/{videoId}/vc/complete` | Wallet에서 발급받은 VC 연결 |
+| `POST` | `/api/verify` | 파일 검증 (`file`, 최대 100MB) |
+| `POST` | `/api/verify/url` | 영상 링크 검증 (`url`) |
+| `POST` | `/api/kakao/skill/verify` | 카카오톡 영상 링크 검증 |
 
-`NOT_REGISTERED`는 해당 영상이 조작되었다는 의미가 아닙니다. 등록 이력이 없다는 의미만
-가지며 응답의 `notice`에도 같은 안내가 포함됩니다. `SIMILAR_MATCH` 응답에는
-`similarityDistance`가 포함됩니다. `SAME_CONTENT`는 더 이상 생성하지 않습니다.
+회원가입·로그인, 프로필, 영상 상세·비활성화 등 전체 API는 Swagger UI에서 확인합니다. VC 연결 시에는 `vcId`, 발급 준비 응답의 `offerId`, 서명이 포함된 VC JSON 문자열 `credential`을 전달합니다.
 
-판정 기준·측정 결과·기존 영상 호환 범위는 [영상 검증 기준](docs/video-verification.md)을 참고하세요.
+```bash
+# 파일 검증
+curl -X POST http://localhost:8070/api/verify \
+  -F 'file=@video.mp4'
 
-```json
-{
-  "verdict": "NOT_REGISTERED",
-  "similarityDistance": null,
-  "authentic": false,
-  "videoId": null,
-  "issuerDid": null,
-  "registeredAt": null,
-  "blockchainVerified": false,
-  "vcVerified": false,
-  "active": false,
-  "message": "진본에 등록된 기록을 찾지 못했습니다.",
-  "notice": "미등록은 영상이 조작되었다는 의미가 아닙니다."
-}
+# URL 검증 — 실제 영상 URL로 변경
+curl -X POST http://localhost:8070/api/verify/url \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://www.youtube.com/watch?v=VIDEO_ID"}'
 ```
 
-`NOT_REGISTERED`, 유사 검색 결과, `VERIFICATION_UNAVAILABLE`는 캐시하지 않습니다.
-등록 직후 재검증에서 이전 미등록/유사 후보가 남지 않으며, 장애 복구 후에도 즉시 재검증합니다.
-캐시 키는 `verify:v3:`로 변경하여 이전 판정의 캐시를 사용하지 않습니다.
+URL은 HTTPS만 허용하며 YouTube, Instagram, TikTok, X(Twitter), Vimeo를 대상으로 합니다. 플랫폼의 접근 제한에 따라 다운로드가 실패할 수 있습니다.
 
-### 영상 VC 발급 상태
+## 검증 결과
 
-| 상태 | 의미 |
-|------|------|
-| `NOT_REQUESTED` | VC 발급을 아직 준비하지 않았거나 준비에 실패한 상태 |
-| `PENDING_WALLET` | 서버 준비가 끝나 Wallet에서 사용자 발급을 기다리는 상태 |
-| `ISSUED` | Wallet 발급이 완료되어 vcId가 영상에 연결된 상태 |
+응답의 `data.authentic`가 최종 인증 여부입니다. 파일이 정확히 일치하거나 영상·음성 비교 기준을 통과하고, 활성 등록 기록과 블록체인·VC 증거가 유효할 때만 `true`입니다.
 
-VC 완료 요청의 `offerId`는 해당 영상의 가장 최근 VC 발급 준비 응답에 포함된 값과 일치해야 합니다.
+구간 비교는 **영상 커버리지 95% 이상·음성 커버리지 100%**와 순서 보존, 영상·음성이 원본의 같은 시간 위치에 대응할 것을 요구합니다. 커버리지는 비교 구간의 일치 비율이며 탐지 정확도가 아닙니다.
 
-## 블록체인 배포 주의사항
+| `displayStatus` | 의미 |
+| --- | --- |
+| `AUTHENTICATED` | 원본 비교와 등록 증거 검증을 모두 통과 |
+| `CONTENT_SIMILAR` | 유사 후보는 있지만 비교 기준 미달 또는 정보 부족 |
+| `NOT_AUTHENTICATED` | 미등록, 등록 비활성화, VC 미발급·무효 |
+| `UNAVAILABLE` | 외부 검증 장애 또는 블록체인 무결성 확인 실패 |
 
-`JinBon.sol`의 `register`와 `deactivate`는 컨트랙트를 배포한 지갑만 호출할 수 있습니다.
-백엔드의 `WALLET_ADDRESS`와 keystore는 이 배포 지갑을 사용해야 합니다. 컨트랙트 조회 ABI에
-signature가 추가되어 이전 버전 컨트랙트와 호환되지 않으므로, 기존 배포본을 사용하는 환경은
-새 컨트랙트를 배포하고 `CONTRACT_ADDRESS`를 갱신해야 합니다.
+**미등록은 영상이 조작되었다는 뜻이 아닙니다.** 세부 판정은 `verdict`, 등록 증거는 `blockchainVerified`·`vcVerified`·`vcClaimsBound`로 확인합니다. 비교 기준은 [VideoContentMatchService](src/main/java/com/jinbon/domain/video/service/VideoContentMatchService.java)에 정의되어 있습니다.
+
+## 개발
+
+Java 21 · Spring Boot 4.1.0 · PostgreSQL 16.4 · Redis 7 · JavaCV / FFmpeg · Gradle 8.14
+
+```bash
+./gradlew test       # 테스트
+./gradlew bootJar    # 실행 가능한 JAR 생성
+```
+
+코드는 [domain](src/main/java/com/jinbon/domain)(인증·회원·영상·카카오), [infra](src/main/java/com/jinbon/infra)(외부 서비스 연동), [global](src/main/java/com/jinbon/global)(설정·공통 처리)로 구성됩니다.
+
+배포 시 `SPRING_PROFILES_ACTIVE=prod`와 `CORS_ALLOWED_ORIGINS`를 설정합니다. 허용 주소에는 웹 클라이언트와 백엔드 자신의 공개 주소를 포함합니다. `prod`는 기존 DB 스키마를 검증하므로 먼저 스키마를 준비해야 합니다. 상세 설정은 [application-prod.yml](src/main/resources/application-prod.yml)을 확인합니다.
